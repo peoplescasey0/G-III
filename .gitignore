@@ -1,0 +1,22 @@
+# Rust build outputs
+/target/
+/kernel/target/
+/micro-host/target/
+/micro-host/kernel/target/
+/user/target/
+**/*.rs.bk
+
+# Node / Vite dependencies & build outputs
+node_modules/
+workspace-prototype/node_modules/
+workspace-prototype/dist/
+workspace-prototype/.runtime/
+
+# Guest disk images, overlays & ISOs (keep master-images/postcard-minimal-kernel & ramdisk.img)
+*.iso
+*.qcow2
+*.raw
+workspace-prototype/data/overlays/*
+!workspace-prototype/data/overlays/.gitkeep
+workspace-prototype/data/windows/*
+!workspace-prototype/data/windows/.gitkeep
