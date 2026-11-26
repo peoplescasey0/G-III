@@ -44,6 +44,18 @@ export const DEFAULT_TIMEOUT_MS = 2500;
 export const DEFAULT_BOOT_TIMEOUT_MS = 30_000;
 /** The shell prompt printed by `shell.rs` once the kernel is ready for input. */
 export const KERNEL_READY_PATTERN = /spatial>\s*$/;
+/**
+ * Boot milestones the kernel prints on COM1 before its prompt, in order. They
+ * turn the otherwise opaque wait into a stage a UI can show.
+ */
+export const BOOT_STAGES = Object.freeze([
+  { id: "banner", pattern: /POST CARD SPATIAL OS - BOOTED/ },
+  { id: "interrupts", pattern: /\[ok\] IDT loaded/ },
+  { id: "memory", pattern: /\[ok\] kernel page tables active/ },
+  { id: "alive", pattern: /Spatial OS is ALIVE!/ },
+]);
+/** Each `[ok] ...` line is one passed boot self-test. */
+const BOOT_CHECK_PATTERN = /^\s*\[ok\] /;
 const LOG_LIMIT = 200;
 const MAX_BUFFER_BYTES = 64 * 1024;
 
@@ -188,6 +200,7 @@ export function createKernelBridge({
     startedAt: null,
     booted: false,
     bootedAt: null,
+    boot: { stage: "spawned", checks: 0 },
     accel: accel ?? resolveAccel({ env, platform, exists }),
     lastFrame: null,
     lastFrameAt: null,
@@ -214,6 +227,7 @@ export function createKernelBridge({
     if (state.booted) return;
     state.booted = true;
     state.bootedAt = Date.now();
+    state.boot.stage = "shell";
     for (const waiter of bootWaiters) {
       clearTimeout(waiter.timer);
       waiter.resolve();
@@ -268,8 +282,18 @@ export function createKernelBridge({
     else resolve(frame);
   };
 
+  const trackBoot = (line) => {
+    if (state.booted) return;
+    const current = BOOT_STAGES.findIndex((stage) => stage.id === state.boot.stage);
+    for (const [index, stage] of BOOT_STAGES.entries()) {
+      if (index > current && stage.pattern.test(line)) state.boot.stage = stage.id;
+    }
+    if (BOOT_CHECK_PATTERN.test(line)) state.boot.checks += 1;
+  };
+
   const ingestLine = (line) => {
     pushLog(line);
+    trackBoot(line);
     if (!state.booted && readyPattern.test(line)) markBooted();
     if (!line.includes(KERNEL_FRAME_PREFIX)) return;
     const parsed = parseKernelFrame(line);
@@ -300,6 +324,19 @@ export function createKernelBridge({
     if (buffer.length > MAX_BUFFER_BYTES) buffer = "";
   };
 
+  const bootPhase = () => {
+    if (state.state === BRIDGE_STATES.FAILED) return "failed";
+    if (state.booted) return "ready";
+    if (state.state === BRIDGE_STATES.RUNNING || state.state === BRIDGE_STATES.STARTING) return "booting";
+    return "stopped";
+  };
+
+  const bootElapsedMs = () => {
+    if (state.startedAt === null) return null;
+    if (!state.booted && state.state === BRIDGE_STATES.STOPPED) return null;
+    return (state.bootedAt ?? Date.now()) - state.startedAt;
+  };
+
   const status = () => ({
     protocol: { name: "postcard.spatial.kernel", version: 1 },
     state: state.state,
@@ -310,6 +347,13 @@ export function createKernelBridge({
     revision: state.lastFrame?.revision ?? null,
     cards: state.lastFrame?.cards?.length ?? 0,
     booted: state.booted,
+    boot: {
+      phase: bootPhase(),
+      stage: state.boot.stage,
+      checks: state.boot.checks,
+      elapsedMs: bootElapsedMs(),
+      timeoutMs: bootTimeoutMs,
+    },
     accel: state.accel,
     kernelPath: state.kernelPath,
     qemuPath: state.qemuPath,
@@ -341,6 +385,7 @@ export function createKernelBridge({
     state.error = null;
     state.booted = false;
     state.bootedAt = null;
+    state.boot = { stage: "spawned", checks: 0 };
     state.startedAt = Date.now();
     // Re-detect on every start: `/dev/kvm` may have been granted after this
     // bridge was constructed by `createGuestApi`.

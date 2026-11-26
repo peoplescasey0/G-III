@@ -174,6 +174,110 @@ button {
   letter-spacing: 1.25px;
 }
 
+.kernel-progress {
+  position: absolute;
+  z-index: 3;
+  top: 120px;
+  right: 26px;
+  display: inline-flex;
+  align-items: center;
+  max-width: 320px;
+  overflow: hidden;
+  padding: 3px 8px;
+  border: 1px solid rgba(255, 184, 28, 0.4);
+  border-radius: 999px;
+  background: rgba(255, 184, 28, 0.08);
+  color: #ffb81c;
+  font: 500 9px "DM Mono", monospace;
+  letter-spacing: 1.1px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kernel-progress[hidden] {
+  display: none;
+}
+
+.kernel-progress.is-ready {
+  border-color: rgba(121, 222, 216, 0.4);
+  background: rgba(121, 222, 216, 0.08);
+  color: var(--mint);
+}
+
+.kernel-progress.is-failed {
+  border-color: rgba(228, 149, 164, 0.45);
+  background: rgba(228, 149, 164, 0.1);
+  color: #e495a4;
+}
+
+/* Aim readout for the vector-targeted card throw. Follows the pointer while a
+   card is carried, and names the card the flick would land on. */
+.throw-aim {
+  position: absolute;
+  z-index: 4;
+  display: grid;
+  gap: 2px;
+  min-width: 132px;
+  padding: 5px 8px 6px;
+  border: 1px solid rgba(255, 184, 28, 0.45);
+  border-radius: 7px;
+  background: rgba(10, 13, 19, 0.82);
+  color: #ffb81c;
+  font: 500 9px "DM Mono", monospace;
+  letter-spacing: 1px;
+  pointer-events: none;
+  transform: translate(14px, -50%);
+  white-space: nowrap;
+}
+
+.throw-aim[hidden] {
+  display: none;
+}
+
+.throw-aim.is-armed {
+  border-color: rgba(255, 184, 28, 0.7);
+}
+
+.throw-aim.is-valid {
+  border-color: rgba(121, 222, 216, 0.65);
+  color: var(--mint);
+}
+
+.throw-aim-target {
+  color: #9aa3b2;
+  font-size: 8px;
+  letter-spacing: 0.8px;
+}
+
+.throw-aim.is-valid .throw-aim-target {
+  color: var(--mint);
+}
+
+.throw-aim-meter {
+  display: block;
+  width: 100%;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.throw-aim-meter i {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: currentColor;
+  transition: width 60ms linear;
+}
+
+@media (max-width: 640px) {
+  .kernel-progress {
+    top: 116px;
+    right: 16px;
+    max-width: 270px;
+    font-size: 8px;
+    letter-spacing: 0.8px;
+  }
+}
+
 .live-dot,
 .status-live,
 .selection-indicator {

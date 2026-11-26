@@ -11,6 +11,13 @@
 # studio's own install flow (see workspace-prototype/README.md).
 set -euo pipefail
 
+# `--quiet` is used by the build so a normal `make kernel` does not repeat the
+# install advisories on every rebuild.
+quiet=false
+if [[ "${1:-}" == "--quiet" ]]; then
+    quiet=true
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 DATA_DIR="${POSTCARD_VM_DATA:-${REPO_ROOT}/workspace-prototype/data}"
@@ -40,15 +47,17 @@ else
     echo "ramdisk not built yet: run 'make userland' (looked for ${RAMDISK_IMG})" >&2
 fi
 
-if [[ ! -f "${MASTER_DIR}/debian-golden.qcow2" ]]; then
-    echo "no Debian golden base yet: install Debian on a Linux card, shut it down," \
-        "then choose 'Finish base installation' (or set POSTCARD_LINUX_BASE)."
-fi
+if [[ "${quiet}" == false ]]; then
+    if [[ ! -f "${MASTER_DIR}/debian-golden.qcow2" ]]; then
+        echo "no Debian golden base yet: install Debian on a Linux card, shut it down," \
+            "then choose 'Finish base installation' (or set POSTCARD_LINUX_BASE)."
+    fi
 
-windows_disks=("${DATA_DIR}/windows/disks/"*.qcow2)
-if [[ ! -e "${windows_disks[0]}" ]]; then
-    echo "no Windows disk yet: install Windows from your own ISO on a Windows card" \
-        "(set POSTCARD_WINDOWS_ISO, never bundled)."
-fi
+    windows_disks=("${DATA_DIR}/windows/disks/"*.qcow2)
+    if [[ ! -e "${windows_disks[0]}" ]]; then
+        echo "no Windows disk yet: install Windows from your own ISO on a Windows card" \
+            "(set POSTCARD_WINDOWS_ISO, never bundled)."
+    fi
 
-echo "guest data directory: ${DATA_DIR}"
+    echo "guest data directory: ${DATA_DIR}"
+fi

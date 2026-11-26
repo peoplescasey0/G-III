@@ -438,9 +438,15 @@
             <span class="hint-mouse" aria-hidden="true"></span>
             <span>SCROLL OR ARROWS TO BROWSE</span>
             <span class="hint-divider">·</span>
-            <span>DRAG CARD TO FLIP · DRAG SPACE TO TURN</span>
+            <span>DRAG CARD TO FLIP · FLICK CARD TO THROW · DRAG SPACE TO TURN</span>
           </div>
           <div class="scene-index"><span class="index-line"></span><span><span id="scene-card-index">03</span> — <span id="scene-card-total">05</span></span></div>
+          <div class="kernel-progress" id="kernel-progress" hidden aria-live="polite">KERNEL · OFFLINE</div>
+          <div class="throw-aim" id="throw-aim" hidden aria-hidden="true">
+            <span class="throw-aim-label" id="throw-aim-label">FLICK TO THROW</span>
+            <span class="throw-aim-target" id="throw-aim-target">NO LANDING TARGET</span>
+            <span class="throw-aim-meter"><i id="throw-aim-power"></i></span>
+          </div>
         </section>
 
       </main>
@@ -623,6 +629,7 @@
                 <div class="help-row"><span class="help-key">GRAB &amp; DRAG CARD</span><span>Click and drag left/right/up/down on any card to physically flip across all 6 faces.</span></div>
                 <div class="help-row"><span class="help-key">CLICK / Z KEY</span><span>Zoom directly into the selected card (2× Retina OLED view). Press <code>Z</code> or <code>Esc</code> to zoom out.</span></div>
                 <div class="help-row"><span class="help-key">SHIFT + DRAG</span><span>Reposition a card in 3D space above the studio floor.</span></div>
+                <div class="help-row"><span class="help-key">✈ FLICK TO THROW</span><span>Grab a front card’s body and flick it: the flick’s direction and speed are the throw. A mint aim ray and reticle mark the valid landing card, the card flies an arc and stops on contact, then opens where it lands. A slow drag still just arranges it.</span></div>
               </div>
             </details>
             <details class="manual-chapter">

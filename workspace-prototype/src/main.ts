@@ -13,6 +13,16 @@ import {
 } from "./card-actions";
 import { carouselPoseFromAngle } from "./carousel-pose";
 import {
+  computeThrowVector,
+  pickThrowTarget,
+  throwArcHeightForPower,
+  throwDistanceForPower,
+  throwDurationForPower,
+  throwTrajectoryPoint,
+  type PointerSample,
+  type ThrowVector,
+} from "./throw-vector";
+import {
   createSpatialClient,
   managedPoses,
   type SpatialPose,
@@ -496,6 +506,10 @@ const resetButtonElement = resetButton;
 const recipientSelectElement = recipientSelect;
 const remoteTargetInputElement = remoteTargetInput;
 const toastElement = toast;
+const throwAimElement = document.querySelector<HTMLDivElement>("#throw-aim");
+const throwAimLabelElement = document.querySelector<HTMLElement>("#throw-aim-label");
+const throwAimTargetElement = document.querySelector<HTMLElement>("#throw-aim-target");
+const throwAimPowerElement = document.querySelector<HTMLElement>("#throw-aim-power");
 const trashTargetElement = trashTarget;
 const binCountElement = binCount;
 const binDialogElement = binDialog;
@@ -1258,6 +1272,7 @@ let drag:
       grabProgress?: number;
       flipAxis?: "horizontal" | "vertical";
       offset?: THREE.Vector3;
+      samples?: PointerSample[];
       startX: number;
       startY: number;
       lastX: number;
@@ -1401,6 +1416,55 @@ const airplaneMaterial = new THREE.MeshStandardMaterial({
   emissiveIntensity: 1.7,
   side: THREE.DoubleSide,
 });
+
+/**
+ * Vector-targeted throw.
+ *
+ * A carried card becomes a projectile when the hand leaves it with speed: the
+ * flick supplies a direction and a force, a ray from the camera picks a valid
+ * landing card, and the card flies an arc to it, resists contact on the way,
+ * and opens where it lands. A pointer has no pressure field, so force is read
+ * from the pointer's own motion (see `src/throw-vector.ts`).
+ */
+type ThrowFlight = {
+  card: SystemCard;
+  from: THREE.Vector3;
+  to: THREE.Vector3;
+  fromScale: THREE.Vector3;
+  toScale: THREE.Vector3;
+  startedAt: number;
+  duration: number;
+  arcHeight: number;
+  power: number;
+  target?: SystemCard;
+  contact?: boolean;
+};
+let throwFlight: ThrowFlight | undefined;
+let throwAim: { target?: SystemCard; point: THREE.Vector3 } | undefined;
+type ThrowBloom = { mesh: THREE.Mesh; startedAt: number; duration: number };
+const throwBlooms: ThrowBloom[] = [];
+const throwAimLine = new THREE.Line(
+  new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
+  new THREE.LineBasicMaterial({ color: "#79ded8", transparent: true, opacity: 0.6 }),
+);
+throwAimLine.visible = false;
+throwAimLine.frustumCulled = false;
+scene.add(throwAimLine);
+const throwAimReticle = new THREE.Mesh(
+  new THREE.RingGeometry(0.2, 0.245, 44),
+  new THREE.MeshBasicMaterial({
+    color: "#79ded8",
+    transparent: true,
+    opacity: 0.9,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  }),
+);
+throwAimReticle.visible = false;
+throwAimReticle.frustumCulled = false;
+scene.add(throwAimReticle);
+/** Cards closer than this stop a throw instead of letting it pass through. */
+const THROW_CONTACT_RADIUS = 0.95;
 
 // --- Native Web Audio Synthesizer (Studio Sound FX) ---
 let audioCtx: AudioContext | null = null;
@@ -4401,6 +4465,85 @@ function isGuestServiceStatus(value: unknown): value is GuestServiceStatus {
   );
 }
 
+type KernelProgressPayload = {
+  kernel?: {
+    booted?: boolean;
+    revision?: number | null;
+    boot?: {
+      phase?: string;
+      stage?: string;
+      checks?: number;
+      elapsedMs?: number | null;
+    };
+  };
+};
+
+const KERNEL_STAGE_LABELS: Record<string, string> = {
+  spawned: "starting qemu",
+  banner: "kernel entry",
+  interrupts: "gdt + idt",
+  memory: "paging + heap",
+  alive: "self-tests",
+  shell: "shell ready",
+};
+
+/**
+ * Renders the live kernel boot in the topbar. The bridge reports a stage and an
+ * elapsed time, so a cold TCG boot is visible instead of looking like a hung
+ * pull; without a bridge the chip stays hidden.
+ */
+function renderKernelProgress(payload: KernelProgressPayload): void {
+  const element = document.querySelector<HTMLElement>("#kernel-progress");
+  if (!element) return;
+  const kernel = payload.kernel;
+  if (!kernel) {
+    element.hidden = true;
+    return;
+  }
+  const boot = kernel.boot;
+  const phase = boot?.phase ?? (kernel.booted ? "ready" : "stopped");
+  const elapsedMs = boot?.elapsedMs;
+  const elapsed = typeof elapsedMs === "number" ? ` · ${(elapsedMs / 1000).toFixed(1)}s` : "";
+  if (phase === "booting") {
+    const stage = KERNEL_STAGE_LABELS[boot?.stage ?? ""] ?? boot?.stage ?? "boot";
+    const checks = boot?.checks ? ` · ${boot.checks}✓` : "";
+    element.textContent = `KERNEL BOOT · ${stage}${checks}${elapsed}`;
+    element.title = "Kernel bridge is booting the guest";
+    element.className = "kernel-progress";
+    element.hidden = false;
+  } else if (phase === "ready") {
+    element.textContent = `KERNEL READY · rev ${kernel.revision ?? 0}${elapsed}`;
+    element.title = "Kernel bridge is answering snapshot pulls";
+    element.className = "kernel-progress is-ready";
+    element.hidden = false;
+  } else if (phase === "failed") {
+    element.textContent = "KERNEL · FAILED";
+    element.className = "kernel-progress is-failed";
+    element.hidden = false;
+  } else {
+    element.hidden = true;
+  }
+}
+
+async function refreshKernelProgress(): Promise<void> {
+  const element = document.querySelector<HTMLElement>("#kernel-progress");
+  if (!element) return;
+  try {
+    const response = await fetch("/api/spatial/kernel", { headers: { accept: "application/json" } });
+    if (!response.ok) {
+      element.hidden = true;
+      return;
+    }
+    renderKernelProgress((await response.json()) as KernelProgressPayload);
+  } catch {
+    element.hidden = true;
+  }
+}
+
+window.setInterval(() => {
+  void refreshKernelProgress();
+}, 1000);
+
 async function requestGuestApi(
   endpoint: string,
   body?: Record<string, unknown>,
@@ -5424,6 +5567,7 @@ function updateCardFocus(card: SystemCard, dt: number, reduceMotion: boolean): v
   const heldOrFlipping =
     Boolean(card.flipAnim) ||
     Boolean(card.twisted) ||
+    throwFlight?.card === card ||
     (drag?.card === card && (drag.mode === "flip" || drag.mode === "peel"));
   const settleRadius =
     benchCount > 1 && isCardPulledToFront(card)
@@ -5765,6 +5909,243 @@ function findPeerCardAtPointer(draggedCard: SystemCard): SystemCard | undefined 
     return cards.find((item) => item.id === hit.object.userData.cardId);
   }
   return undefined;
+}
+
+function throwPointerScreenPoint(): { x: number; y: number } {
+  return {
+    x: (pointer.x * 0.5 + 0.5) * sceneViewportWidth,
+    y: (-pointer.y * 0.5 + 0.5) * sceneViewportHeight,
+  };
+}
+
+function cardScreenCenter(card: SystemCard): { x: number; y: number } {
+  const projected = card.group.position.clone().project(camera);
+  return {
+    x: (projected.x * 0.5 + 0.5) * sceneViewportWidth,
+    y: (-projected.y * 0.5 + 0.5) * sceneViewportHeight,
+  };
+}
+
+/**
+ * Aim with a ray first: whatever card the pointer ray actually hits is the
+ * landing target. If the ray misses, the flick direction picks the nearest
+ * card ahead of it, so a quick throw across the room still finds a recipient.
+ */
+function findThrowTargetAtPointer(carried: SystemCard): SystemCard | undefined {
+  const peers = cards.filter((card) => card !== carried && card.group.visible);
+  const hit = raycaster.intersectObjects(
+    peers.flatMap((card) => card.group.children.slice(1)),
+    false,
+  )[0];
+  if (hit) {
+    const hitCard = cards.find((card) => card.id === hit.object.userData.cardId);
+    if (hitCard && hitCard !== carried) return hitCard;
+  }
+  const pointerPoint = throwPointerScreenPoint();
+  const cardPoint = cardScreenCenter(carried);
+  return pickThrowTarget(
+    peers.map((card) => ({ item: card, ...cardScreenCenter(card) })),
+    pointerPoint,
+    { dx: pointerPoint.x - cardPoint.x, dy: pointerPoint.y - cardPoint.y },
+  );
+}
+
+/** The focused card keeps its light; valid targets brighten; the rest dim. */
+function setThrowTargetHighlight(target?: SystemCard): void {
+  for (const card of cards) {
+    const edge = card.group.children[0];
+    const material = edge instanceof THREE.Mesh ? edge.material : undefined;
+    if (!(material instanceof THREE.MeshStandardMaterial)) continue;
+    if (card === target) {
+      material.emissive.set("#79ded8");
+      material.emissiveIntensity = 1.4;
+    } else if (card === selectedCard) {
+      material.emissive.set("#70d5cf");
+      material.emissiveIntensity = target ? 0.32 : 0.62;
+    } else {
+      material.emissive.set("#152631");
+      material.emissiveIntensity = target ? 0.1 : 0.22;
+    }
+  }
+}
+
+function positionThrowAimHud(point: { x: number; y: number }): void {
+  if (!throwAimElement) return;
+  const shell = sceneShellElement.getBoundingClientRect();
+  const canvas = renderer.domElement.getBoundingClientRect();
+  throwAimElement.style.left = `${Math.round(canvas.left - shell.left + point.x)}px`;
+  throwAimElement.style.top = `${Math.round(canvas.top - shell.top + point.y)}px`;
+}
+
+function updateThrowAim(card: SystemCard, samples: readonly PointerSample[]): void {
+  const vector = computeThrowVector(samples, performance.now());
+  const target = findThrowTargetAtPointer(card);
+  const point = target
+    ? target.group.position.clone().add(new THREE.Vector3(0, 0, 0.55))
+    : raycaster.ray.at(7.5, new THREE.Vector3());
+  throwAim = { target, point };
+  const positions = throwAimLine.geometry.getAttribute("position") as THREE.BufferAttribute;
+  positions.setXYZ(0, card.group.position.x, card.group.position.y, card.group.position.z);
+  positions.setXYZ(1, point.x, point.y, point.z);
+  positions.needsUpdate = true;
+  throwAimLine.visible = true;
+  (throwAimLine.material as THREE.LineBasicMaterial).color.set(target ? "#79ded8" : "#ffb81c");
+  throwAimReticle.visible = Boolean(target);
+  if (target) {
+    throwAimReticle.position.copy(point);
+    throwAimReticle.quaternion.copy(camera.quaternion);
+  }
+  setThrowTargetHighlight(target);
+  if (!throwAimElement) return;
+  throwAimElement.hidden = false;
+  throwAimElement.classList.toggle("is-armed", Boolean(vector));
+  throwAimElement.classList.toggle("is-valid", Boolean(target));
+  if (throwAimLabelElement) {
+    throwAimLabelElement.textContent = vector
+      ? `THROW · ${Math.round(vector.power * 100)}%`
+      : "FLICK TO THROW";
+  }
+  if (throwAimTargetElement) {
+    throwAimTargetElement.textContent = target ? `LAND ON · ${target.name}` : "NO LANDING TARGET";
+  }
+  if (throwAimPowerElement) {
+    throwAimPowerElement.style.width = `${Math.round((vector?.power ?? 0) * 100)}%`;
+  }
+  positionThrowAimHud(throwPointerScreenPoint());
+}
+
+function clearThrowAim(): void {
+  throwAim = undefined;
+  throwAimLine.visible = false;
+  throwAimReticle.visible = false;
+  if (throwAimElement) throwAimElement.hidden = true;
+  setThrowTargetHighlight(undefined);
+}
+
+/** Screen flick -> world direction in the camera's own right/up plane. */
+function throwDirection(vector: ThrowVector): THREE.Vector3 {
+  const right = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+  const up = new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
+  return right
+    .multiplyScalar(vector.dx)
+    .add(up.multiplyScalar(-vector.dy))
+    .add(new THREE.Vector3(0, 0, -0.45))
+    .normalize();
+}
+
+function beginCardThrow(card: SystemCard, vector: ThrowVector, target?: SystemCard): void {
+  playAirplaneSound();
+  const to = target
+    ? target.group.position.clone().add(new THREE.Vector3(0, 0.06, 0.72))
+    : card.group.position.clone().add(throwDirection(vector).multiplyScalar(throwDistanceForPower(vector.power)));
+  to.x = THREE.MathUtils.clamp(to.x, -7.2, 7.2);
+  to.y = THREE.MathUtils.clamp(to.y, 1.7, 5.1);
+  to.z = THREE.MathUtils.clamp(to.z, -6.4, 2.6);
+  throwFlight = {
+    card,
+    from: card.group.position.clone(),
+    to,
+    fromScale: card.group.scale.clone(),
+    toScale: card.group.scale.clone().multiplyScalar(target ? 0.78 : 0.94),
+    startedAt: performance.now(),
+    duration: prefersReducedMotion() ? 0 : throwDurationForPower(vector.power),
+    arcHeight: throwArcHeightForPower(vector.power),
+    power: vector.power,
+    target,
+  };
+  card.layoutOffset.set(0, 0, 0);
+  showToast(
+    target
+      ? `✈ ${card.name} thrown at ${target.name} · ${Math.round(vector.power * 100)}% flick`
+      : `✈ ${card.name} thrown into the room · ${Math.round(vector.power * 100)}% flick`,
+  );
+}
+
+function spawnThrowBloom(at: THREE.Vector3, color: string): void {
+  for (const delay of [0, 90]) {
+    const mesh = new THREE.Mesh(
+      new THREE.RingGeometry(0.26, 0.3, 48),
+      new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0.85,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+    );
+    mesh.position.copy(at);
+    mesh.quaternion.copy(camera.quaternion);
+    scene.add(mesh);
+    throwBlooms.push({ mesh, startedAt: performance.now() + delay, duration: 620 });
+  }
+}
+
+function updateThrowBlooms(now: number): void {
+  for (let index = throwBlooms.length - 1; index >= 0; index -= 1) {
+    const bloom = throwBlooms[index];
+    const progress = (now - bloom.startedAt) / bloom.duration;
+    if (progress < 0) continue;
+    if (progress >= 1) {
+      scene.remove(bloom.mesh);
+      bloom.mesh.geometry.dispose();
+      (bloom.mesh.material as THREE.Material).dispose();
+      throwBlooms.splice(index, 1);
+      continue;
+    }
+    bloom.mesh.scale.setScalar(1 + progress * 3.4);
+    (bloom.mesh.material as THREE.MeshBasicMaterial).opacity = 0.85 * (1 - progress);
+    bloom.mesh.quaternion.copy(camera.quaternion);
+  }
+}
+
+function finishCardThrow(flight: ThrowFlight): void {
+  throwFlight = undefined;
+  const card = flight.card;
+  card.group.position.copy(flight.to);
+  card.group.scale.copy(flight.toScale);
+  card.layoutOffset.copy(flight.to).sub(wheelPosition(cards.indexOf(card)));
+  card.tiltX = 0;
+  card.tiltZ = 0;
+  resolveCardCollisions(card);
+  spawnThrowBloom(flight.to, flight.target ? "#79ded8" : "#ffb81c");
+  const landedOn = flight.target;
+  if (landedOn && cards.includes(landedOn)) {
+    landedOn.blurLevel = 0;
+    landedOn.blurStep = 0;
+    landedOn.revealed = true;
+    refreshCardTexture(landedOn, true);
+    toggleCardTwist(card, true);
+    showToast(`✦ ${card.name} landed on ${landedOn.name} · opened at the landing place.`);
+  } else {
+    showToast(`✦ ${card.name} landed in the room after a ${Math.round(flight.power * 100)}% flick.`);
+  }
+}
+
+function updateThrowFlight(now: number): void {
+  const flight = throwFlight;
+  if (!flight) return;
+  const progress =
+    flight.duration <= 0
+      ? 1
+      : THREE.MathUtils.clamp((now - flight.startedAt) / flight.duration, 0, 1);
+  const point = throwTrajectoryPoint(flight.from, flight.to, progress, flight.arcHeight);
+  flight.card.group.position.set(point.x, point.y, point.z);
+  flight.card.group.scale.copy(flight.fromScale).lerp(flight.toScale, Math.min(1, progress * 1.2));
+  flight.card.group.rotation.z = Math.sin(progress * Math.PI) * 0.3;
+
+  if (!flight.contact && progress < 1) {
+    for (const other of cards) {
+      if (other === flight.card || other === flight.target || !other.group.visible) continue;
+      if (flight.card.group.position.distanceTo(other.group.position) < THROW_CONTACT_RADIUS) {
+        // Resistance on contact: the card stops where it hit instead of passing through.
+        flight.contact = true;
+        flight.to.copy(flight.card.group.position);
+        flight.startedAt = now - flight.duration;
+        break;
+      }
+    }
+  }
+  if (progress >= 1) finishCardThrow(flight);
 }
 
 function setBinCanHover(active: boolean): void {
@@ -6234,6 +6615,7 @@ function onPointerDown(event: PointerEvent): void {
       pointerId: event.pointerId,
       mode: "move",
       freeMove,
+      samples: [{ x: event.clientX, y: event.clientY, t: startTime }],
       offset: hitCard.group.position.clone().sub(dragPoint),
       startX: event.clientX,
       startY: event.clientY,
@@ -6315,6 +6697,11 @@ function onPointerMove(event: PointerEvent): void {
     drag.card.tiltZ = overBin ? 0.22 : 0;
     resolveCardCollisions(drag.card);
     drag.card.group.rotation.y = cardDisplayRotation(drag.card);
+    drag.samples ??= [];
+    drag.samples.push({ x: event.clientX, y: event.clientY, t: now });
+    if (drag.samples.length > 16) drag.samples.shift();
+    if (drag.freeMove) clearThrowAim();
+    else updateThrowAim(drag.card, drag.samples);
   } else if (drag.mode === "peel" && drag.card) {
     // Pull the display corner outward: it peels toward you and the card swells.
     const cx = drag.cornerX ?? 1;
@@ -6389,6 +6776,12 @@ function onPointerUp(event: PointerEvent): void {
   updatePointer(event);
   const dx = event.clientX - completedDrag.startX;
   const dy = event.clientY - completedDrag.startY;
+  const throwVector =
+    completedDrag.mode === "move" && !completedDrag.freeMove
+      ? computeThrowVector(completedDrag.samples ?? [], performance.now())
+      : undefined;
+  const throwTarget = throwAim?.target;
+  clearThrowAim();
 
   if (completedDrag.moved) {
     if (completedDrag.card && isCardOverBinCan(completedDrag.card, event.clientX, event.clientY)) {
@@ -6399,18 +6792,22 @@ function onPointerUp(event: PointerEvent): void {
       beginCardBinFlight(completedDrag.card);
     } else if (completedDrag.mode === "move" && completedDrag.card) {
       completedDrag.card.tiltZ = 0;
-      const targetPeer = !completedDrag.freeMove ? findPeerCardAtPointer(completedDrag.card) : undefined;
-      if (targetPeer) {
-        completedDrag.card.layoutOffset.set(0, 0, 0);
-        selectedCard = completedDrag.card;
-        openShareDialog(targetPeer);
-      } else if (completedDrag.freeMove) {
-        resolveCardCollisions(completedDrag.card);
-        completedDrag.card.layoutOffset
-          .copy(completedDrag.card.group.position)
-          .sub(wheelPosition(cards.indexOf(completedDrag.card)));
+      if (throwVector) {
+        beginCardThrow(completedDrag.card, throwVector, throwTarget);
       } else {
-        completedDrag.card.layoutOffset.set(0, 0, 0);
+        const targetPeer = !completedDrag.freeMove ? findPeerCardAtPointer(completedDrag.card) : undefined;
+        if (targetPeer) {
+          completedDrag.card.layoutOffset.set(0, 0, 0);
+          selectedCard = completedDrag.card;
+          openShareDialog(targetPeer);
+        } else if (completedDrag.freeMove) {
+          resolveCardCollisions(completedDrag.card);
+          completedDrag.card.layoutOffset
+            .copy(completedDrag.card.group.position)
+            .sub(wheelPosition(cards.indexOf(completedDrag.card)));
+        } else {
+          completedDrag.card.layoutOffset.set(0, 0, 0);
+        }
       }
     } else if (completedDrag.mode === "peel" && completedDrag.card) {
       const card = completedDrag.card;
@@ -7259,6 +7656,7 @@ function animate(now = 0): void {
   }
 
   for (const [index, card] of cards.entries()) {
+    if (throwFlight?.card === card) continue;
     if (drag?.card === card && drag.mode === "move") continue;
 
     const slotAngle = index * slotStep;
@@ -7505,6 +7903,8 @@ function animate(now = 0): void {
 
   updateTrashFlight(now);
   updateAirplane(now);
+  updateThrowFlight(now);
+  updateThrowBlooms(now);
   if (!reducePreviewMotion) {
     overheadHaloGroup.rotation.y = now * 0.00012;
     studioMotes.rotation.y = -now * 0.00008;

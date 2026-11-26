@@ -17,7 +17,11 @@ Open the local URL printed by Vite. To create a production bundle, run
 
 ## Prototype interactions
 
-- Drag cards to arrange them in the 3D space.
+- Drag cards to arrange them in the 3D space. A quick flick instead throws the
+  card: the flick's direction and speed are the throw vector, a mint aim ray and
+  reticle mark the valid landing card, and the card flies an arc to it (or into
+  the room when nothing valid is in the way). It stops on contact with another
+  card rather than passing through, and opens where it lands.
 - Scroll over the studio or focus the canvas and use the arrow keys to browse
   cards; **Home** and **End** jump to the first and last card.
 - Double-click a card, press **Enter** while the canvas is focused, or use
@@ -91,10 +95,13 @@ curl -X POST http://127.0.0.1:5173/api/spatial/kernel/map \
   -H 'content-type: application/json' -d '{"ids":{"1":"postcard-os"}}'
 ```
 
-Build the image first with `make kernel`, then run `make stage-vm` to copy it (and
-`ramdisk.img`) into `workspace-prototype/data/master-images/`, which is where the
-guest API loads them from by default; `POSTCARD_KERNEL`/`POSTCARD_RAMDISK`
-override those paths. QEMU
+`make kernel` stages the image and `ramdisk.img` into
+`workspace-prototype/data/master-images/` automatically (run `make stage-vm` to
+restage without rebuilding), which is where the guest API loads them from by
+default; `POSTCARD_KERNEL`/`POSTCARD_RAMDISK` override those paths. `make
+check-vm` verifies the staged images, the Debian base and its ready marker, the
+Windows media/firmware/TPM directories and the QEMU binaries, and reports the
+exact path or environment variable for anything missing. QEMU
 is found at `C:\Program Files\qemu\qemu-system-x86_64.exe` on Windows, on `PATH`
 elsewhere, or via `POSTCARD_QEMU`. The bridge is lazy — nothing spawns until you
 ask — and `POST /api/spatial/kernel/stop` shuts it down. Once started, the studio's
@@ -111,6 +118,13 @@ writable, so a boot takes a fraction of a second instead of the roughly ten
 seconds TCG needs. Force either mode with `POSTCARD_QEMU_ACCEL=tcg` or
 `POSTCARD_QEMU_ACCEL=kvm`; `GET /api/spatial/kernel` reports the accelerator in
 use alongside `booted`.
+
+The same status carries `boot`: `phase` (`booting`, `ready`, `failed` or
+`stopped`), the last milestone the kernel printed (`banner`, `interrupts`,
+`memory`, `alive`, `shell`), how many `[ok]` self-checks passed, and the elapsed
+milliseconds. The studio polls that route once a second and shows it as a
+`KERNEL` chip in the topbar, so a slow boot reads as progress instead of a hung
+pull.
 
 If QEMU or the kernel image is missing the routes return `503` with the exact
 path they looked for instead of failing silently.

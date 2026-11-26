@@ -126,14 +126,26 @@ test("the first pull waits for the shell prompt instead of writing into a bootin
   const pending = bridge.requestSnapshot();
   assert.deepEqual(child.writes, [], "nothing is written before the prompt");
   assert.equal(bridge.status().booted, false);
+  assert.equal(bridge.status().boot.phase, "booting");
+  assert.equal(bridge.status().boot.stage, "spawned");
 
   child.send("G-III: booting IDT, paging, heap...\n");
   assert.deepEqual(child.writes, [], "boot chatter alone does not open the gate");
+
+  child.send("POST CARD SPATIAL OS - BOOTED!\n");
+  child.send("[ok] GDT + TSS loaded\n");
+  child.send("[ok] IDT loaded\n");
+  assert.equal(bridge.status().boot.stage, "interrupts");
+  assert.equal(bridge.status().boot.checks, 2);
+  assert.equal(bridge.status().boot.phase, "booting");
+  assert.ok(bridge.status().boot.elapsedMs >= 0);
 
   child.send("spatial> ");
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(child.writes, ["wmjson\r"]);
   assert.equal(bridge.status().booted, true);
+  assert.equal(bridge.status().boot.phase, "ready");
+  assert.equal(bridge.status().boot.stage, "shell");
 
   child.send(`${FRAME_LINE}\n`);
   const frame = await pending;

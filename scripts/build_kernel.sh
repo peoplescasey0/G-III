@@ -65,3 +65,9 @@ if command -v grub-file &>/dev/null; then
 fi
 
 echo "Kernel build complete: ${KERNEL_ELF}"
+
+# The studio boots from workspace-prototype/data/master-images, not target/,
+# so stage the fresh image here instead of leaving a stale copy behind.
+if [[ -x "${SCRIPT_DIR}/stage_vm_images.sh" ]]; then
+    "${SCRIPT_DIR}/stage_vm_images.sh" --quiet
+fi
