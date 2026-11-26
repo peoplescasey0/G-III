@@ -15,13 +15,39 @@ npm run dev
 Open the local URL printed by Vite. To create a production bundle, run
 `npm run build`.
 
+## LAN mode (phone in another room)
+
+`npm run dev:lan` opens the Desk to your local network so a phone on the same
+Wi-Fi can view and control cards while the guests keep running on your PC. Only
+the web UI and guest API are exposed: QEMU's VNC WebSocket (5700+), QMP (4444+)
+and swtpm stay bound to `127.0.0.1` and are never opened to the network.
+
+1. Find the PC's LAN address: Windows `ipconfig` (IPv4 Address), Linux
+   `hostname -I`, macOS `ipconfig getifaddr en0`.
+2. From this folder run `npm run dev:lan` (or `make dev-lan` from the repo
+   root). It binds to `0.0.0.0` on port 5173 and prints
+   `http://<LAN-IP>:5173` for each private address.
+3. Allow the port through the firewall once: accept the Windows Defender
+   prompt, or run `sudo ufw allow 5173/tcp` on Linux.
+4. On the phone, on the same Wi-Fi, open the printed URL.
+
+`PORT=8080 npm run dev:lan` changes the port. LAN mode accepts private
+addresses only (10/8, 172.16/12, 192.168/16, link-local) and only while the LAN
+script is running; loopback keeps working as before. Guest displays reach the
+phone through the dev server's same-origin `/api/guest/display/<cardId>` proxy,
+never by dialling QEMU's loopback port. Do not add router port-forwarding and do
+not expose the port to the internet: this is same-Wi-Fi only.
+
 ## Prototype interactions
 
-- Drag cards to arrange them in the 3D space. A quick flick instead throws the
-  card: the flick's direction and speed are the throw vector, a mint aim ray and
-  reticle mark the valid landing card, and the card flies an arc to it (or into
-  the room when nothing valid is in the way). It stops on contact with another
-  card rather than passing through, and opens where it lands.
+- Drag cards to arrange them in the 3D space. A quick flick instead folds a
+  paper plane out of the card and throws it: the flick's direction and speed are
+  the throw vector, a mint aim ray and reticle mark the valid landing card, and
+  the plane flies an arc to it (or into the room when nothing valid is in the
+  way), stopping on contact rather than passing through. The card stays where it
+  was. The plane carries the note typed into **Send a paper plane**, or a short
+  landing line when none is drafted, and the target turns to its paper-planes
+  face to open the note where it landed.
 - Scroll over the studio or focus the canvas and use the arrow keys to browse
   cards; **Home** and **End** jump to the first and last card.
 - Double-click a card, press **Enter** while the canvas is focused, or use

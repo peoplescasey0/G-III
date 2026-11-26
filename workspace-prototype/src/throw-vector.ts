@@ -39,19 +39,21 @@ export function computeThrowVector(
   const last = samples[samples.length - 1];
   if (now - last.t > THROW_RELEASE_GRACE_MS) return undefined;
 
-  let first = samples[samples.length - 2];
+  let firstIndex = samples.length - 1;
   for (let index = samples.length - 1; index >= 0; index -= 1) {
     if (last.t - samples[index].t > THROW_SAMPLE_WINDOW_MS) break;
-    first = samples[index];
+    firstIndex = index;
   }
+  // Sparse input can leave only the final sample inside the window; the last
+  // two samples are still the best measure of the flick.
+  if (firstIndex === samples.length - 1) firstIndex = samples.length - 2;
   // High-rate or coalesced pointer input can deliver the whole flick inside a
   // millisecond. Widen to earlier samples so the measured span stays meaningful
   // instead of dividing a long travel by an almost-zero duration.
-  let firstIndex = samples.indexOf(first);
   while (firstIndex > 0 && last.t - samples[firstIndex].t < 4) {
     firstIndex -= 1;
-    first = samples[firstIndex];
   }
+  const first = samples[firstIndex];
   const seconds = (last.t - first.t) / 1000;
   // A sub-millisecond span is still a real burst on high-rate input; only a
   // zero-length span means there is nothing to measure.

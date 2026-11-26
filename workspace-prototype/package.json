@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:lan": "node dev-lan.mjs",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "node --test"

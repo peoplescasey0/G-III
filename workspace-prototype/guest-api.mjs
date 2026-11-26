@@ -1,5 +1,5 @@
 import { execFile, execFileSync, execSync, spawn } from "node:child_process";
-import { createConnection, isIP } from "node:net";
+import { createConnection } from "node:net";
 import { availableParallelism } from "node:os";
 import { createHash, randomUUID } from "node:crypto";
 import { promisify } from "node:util";
@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { handleStripeRequest } from "./stripe-api.mjs";
 import { createSpatialHypervisor } from "./spatial-hypervisor.mjs";
 import { createKernelBridge } from "./kernel-bridge.mjs";
+import { isLanClientAllowed } from "./lan-access.mjs";
 
 const execFileAsync = promisify(execFile);
 const appDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -56,13 +57,6 @@ class GuestApiError extends Error {
     super(message);
     this.status = status;
   }
-}
-
-function isLoopback(address) {
-  if (!address) return false;
-  if (address.startsWith("::ffff:")) address = address.slice(7);
-  if (isIP(address) === 4) return address.startsWith("127.");
-  return address === "::1";
 }
 
 function sendJson(response, status, body) {
@@ -1137,6 +1131,19 @@ export function createGuestApi(options = {}) {
     return [...guests.values()].filter((guest) =>
       guest.phase === "starting" || guest.phase === "running" || guest.phase === "stopping",
     );
+  }
+
+  /**
+   * Loopback display port for a running guest. The VNC proxy resolves the port
+   * here so a LAN client can never ask for an arbitrary local port.
+   */
+  function resolveDisplayPort(cardId) {
+    for (const guest of guests.values()) {
+      if (guest.cardId !== cardId) continue;
+      const port = guest.ports?.websocketPort;
+      if (Number.isInteger(port)) return port;
+    }
+    return undefined;
   }
 
   async function status() {
@@ -2693,7 +2700,7 @@ export function createGuestApi(options = {}) {
   // kernel frame, so the studio still runs with no QEMU installed.
   const spatial = createSpatialHypervisor({ kernel: createKernelBridge() });
 
-  return async (request, response, next) => {
+  const api = async (request, response, next) => {
     if (await handleStripeRequest(request, response)) return;
     // Spatial hypervisor control plane (protocol v1), loopback only.
     if (await spatial.route(request, response)) return;
@@ -2706,7 +2713,9 @@ export function createGuestApi(options = {}) {
     const isNetworkPlaneRoute =
       (request.method === "POST" && url.pathname === "/api/guest/paper-plane/inbox") ||
       (request.method === "GET" && url.pathname === "/api/guest/paper-plane/catch");
-    if (!isNetworkPlaneRoute && !isLoopback(request.socket.remoteAddress)) {
+    // Loopback always works; private LAN clients only when `npm run dev:lan`
+    // enabled LAN access. QEMU's own VNC/QMP ports are never widened.
+    if (!isNetworkPlaneRoute && !isLanClientAllowed(request.socket.remoteAddress)) {
       sendJson(response, 403, { error: "Guest controls are available only from this computer." });
       return;
     }
@@ -3006,4 +3015,6 @@ export function createGuestApi(options = {}) {
       sendJson(response, statusCode, { error: message });
     }
   };
+  api.displayPort = resolveDisplayPort;
+  return api;
 }

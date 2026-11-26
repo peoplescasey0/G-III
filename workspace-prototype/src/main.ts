@@ -12,6 +12,8 @@ import {
   type OnCardAction,
 } from "./card-actions";
 import { carouselPoseFromAngle } from "./carousel-pose";
+import { PLANE_FOLD_MS, carriedNote, foldPose } from "./paper-plane";
+import { guestDisplaySocketUrl } from "./guest-display-url";
 import {
   computeThrowVector,
   pickThrowTarget,
@@ -1420,26 +1422,73 @@ const airplaneMaterial = new THREE.MeshStandardMaterial({
 /**
  * Vector-targeted throw.
  *
- * A carried card becomes a projectile when the hand leaves it with speed: the
- * flick supplies a direction and a force, a ray from the camera picks a valid
- * landing card, and the card flies an arc to it, resists contact on the way,
- * and opens where it lands. A pointer has no pressure field, so force is read
- * from the pointer's own motion (see `src/throw-vector.ts`).
+ * The card stays in the ring; a paper plane leaves the hand. The flick
+ * supplies the direction and force, a ray from the camera picks a valid
+ * landing card, and the plane carries a note along the arc, resists contact,
+ * and opens that note where it lands. A pointer has no pressure field, so
+ * force is read from the pointer's own motion (see `src/throw-vector.ts`);
+ * the fold and payload rules live in `src/paper-plane.ts`.
  */
-type ThrowFlight = {
-  card: SystemCard;
+type PaperPlaneModel = {
+  group: THREE.Group;
+  leftWing: THREE.Mesh;
+  rightWing: THREE.Mesh;
+  keel: THREE.Mesh;
+};
+
+/**
+ * Three hinged panels, not a flat triangle: two wings meet on the centreline
+ * and a keel hangs below it, so the fold reads as a fold leaving the hand.
+ */
+function buildPaperPlane(): PaperPlaneModel {
+  const group = new THREE.Group();
+  const wing = (mirror: 1 | -1): THREE.Mesh => {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute(
+      "position",
+      new THREE.Float32BufferAttribute(
+        [0, 0, 0.24, mirror * 0.34, 0, -0.26, 0, 0, -0.26],
+        3,
+      ),
+    );
+    geometry.computeVertexNormals();
+    return new THREE.Mesh(geometry, airplaneMaterial);
+  };
+  const keelGeometry = new THREE.BufferGeometry();
+  keelGeometry.setAttribute(
+    "position",
+    new THREE.Float32BufferAttribute([0, 0, 0.24, 0, 0, -0.26, 0, -0.18, -0.26], 3),
+  );
+  keelGeometry.computeVertexNormals();
+  const leftWing = wing(-1);
+  const rightWing = wing(1);
+  const keel = new THREE.Mesh(keelGeometry, airplaneMaterial);
+  group.add(leftWing, rightWing, keel);
+  group.add(new THREE.PointLight("#e8a191", 1.1, 2.4));
+  return { group, leftWing, rightWing, keel };
+}
+
+function disposePaperPlane(model: PaperPlaneModel): void {
+  scene.remove(model.group);
+  for (const mesh of [model.leftWing, model.rightWing, model.keel]) {
+    mesh.geometry.dispose();
+  }
+}
+
+type PlaneFlight = {
+  model: PaperPlaneModel;
+  fromCard: SystemCard;
   from: THREE.Vector3;
   to: THREE.Vector3;
-  fromScale: THREE.Vector3;
-  toScale: THREE.Vector3;
   startedAt: number;
   duration: number;
   arcHeight: number;
   power: number;
+  note: string;
   target?: SystemCard;
   contact?: boolean;
 };
-let throwFlight: ThrowFlight | undefined;
+let planeFlight: PlaneFlight | undefined;
 let throwAim: { target?: SystemCard; point: THREE.Vector3 } | undefined;
 type ThrowBloom = { mesh: THREE.Mesh; startedAt: number; duration: number };
 const throwBlooms: ThrowBloom[] = [];
@@ -1463,7 +1512,7 @@ const throwAimReticle = new THREE.Mesh(
 throwAimReticle.visible = false;
 throwAimReticle.frustumCulled = false;
 scene.add(throwAimReticle);
-/** Cards closer than this stop a throw instead of letting it pass through. */
+/** Cards closer than this stop a plane instead of letting it pass through. */
 const THROW_CONTACT_RADIUS = 0.95;
 
 // --- Native Web Audio Synthesizer (Studio Sound FX) ---
@@ -4931,9 +4980,16 @@ function connectGuestDisplay(websocketPort: number, cardId: string): void {
   displayedGuestCardId = cardId;
   setGuestState(`Connecting to the ${guestTargetOs} display…`);
   clearGuestError();
-  const wsHost = window.location.hostname || "127.0.0.1";
-  const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const rfb = new RFB(guestDisplayElement, `${wsProtocol}//${wsHost}:${websocketPort}`);
+  const rfb = new RFB(
+    guestDisplayElement,
+    guestDisplaySocketUrl({
+      hostname: window.location.hostname,
+      protocol: window.location.protocol,
+      host: window.location.host,
+      cardId,
+      websocketPort,
+    }),
+  );
   rfb.viewOnly = false;
   rfb.scaleViewport = true;
   rfb.resizeSession = true;
@@ -5567,7 +5623,6 @@ function updateCardFocus(card: SystemCard, dt: number, reduceMotion: boolean): v
   const heldOrFlipping =
     Boolean(card.flipAnim) ||
     Boolean(card.twisted) ||
-    throwFlight?.card === card ||
     (drag?.card === card && (drag.mode === "flip" || drag.mode === "peel"));
   const settleRadius =
     benchCount > 1 && isCardPulledToFront(card)
@@ -6033,31 +6088,50 @@ function throwDirection(vector: ThrowVector): THREE.Vector3 {
     .normalize();
 }
 
-function beginCardThrow(card: SystemCard, vector: ThrowVector, target?: SystemCard): void {
+function beginPlaneThrow(fromCard: SystemCard, vector: ThrowVector, target?: SystemCard): void {
   playAirplaneSound();
   const to = target
     ? target.group.position.clone().add(new THREE.Vector3(0, 0.06, 0.72))
-    : card.group.position.clone().add(throwDirection(vector).multiplyScalar(throwDistanceForPower(vector.power)));
+    : fromCard.group.position.clone().add(throwDirection(vector).multiplyScalar(throwDistanceForPower(vector.power)));
   to.x = THREE.MathUtils.clamp(to.x, -7.2, 7.2);
   to.y = THREE.MathUtils.clamp(to.y, 1.7, 5.1);
   to.z = THREE.MathUtils.clamp(to.z, -6.4, 2.6);
-  throwFlight = {
-    card,
-    from: card.group.position.clone(),
+
+  // A composed note rides with the plane; without one the plane still carries
+  // a short landing line, because an empty note is not a message.
+  const draft = messageInput?.value ?? "";
+  const note = carriedNote(draft, fromCard.name, target?.name ?? "the room");
+  if (draft.trim() && messageInput) messageInput.value = "";
+
+  if (planeFlight) disposePaperPlane(planeFlight.model);
+  const plane = buildPaperPlane();
+  plane.group.position.copy(fromCard.group.position).add(new THREE.Vector3(0, 0.18, 0.4));
+  plane.group.rotation.y = fromCard.group.rotation.y;
+  scene.add(plane.group);
+  planeFlight = {
+    model: plane,
+    fromCard,
+    from: plane.group.position.clone(),
     to,
-    fromScale: card.group.scale.clone(),
-    toScale: card.group.scale.clone().multiplyScalar(target ? 0.78 : 0.94),
     startedAt: performance.now(),
     duration: prefersReducedMotion() ? 0 : throwDurationForPower(vector.power),
     arcHeight: throwArcHeightForPower(vector.power),
     power: vector.power,
+    note,
     target,
   };
-  card.layoutOffset.set(0, 0, 0);
+
+  // The card stays on the ring; a small recoil is the only trace of the launch.
+  fromCard.layoutOffset.set(0, 0, 0);
+  fromCard.tiltX = 0;
+  fromCard.tiltZ = 0;
+  fromCard.peel = Math.max(fromCard.peel ?? 0, 0.3);
+  fromCard.sentNotes.push(`→ ${target ? target.name : "the room"}: ${note}`);
+  refreshCardTexture(fromCard);
   showToast(
     target
-      ? `✈ ${card.name} thrown at ${target.name} · ${Math.round(vector.power * 100)}% flick`
-      : `✈ ${card.name} thrown into the room · ${Math.round(vector.power * 100)}% flick`,
+      ? `✈ a plane leaves ${fromCard.name} for ${target.name} · ${Math.round(vector.power * 100)}% flick`
+      : `✈ a plane leaves ${fromCard.name} · ${Math.round(vector.power * 100)}% flick`,
   );
 }
 
@@ -6098,54 +6172,67 @@ function updateThrowBlooms(now: number): void {
   }
 }
 
-function finishCardThrow(flight: ThrowFlight): void {
-  throwFlight = undefined;
-  const card = flight.card;
-  card.group.position.copy(flight.to);
-  card.group.scale.copy(flight.toScale);
-  card.layoutOffset.copy(flight.to).sub(wheelPosition(cards.indexOf(card)));
-  card.tiltX = 0;
-  card.tiltZ = 0;
-  resolveCardCollisions(card);
+function finishPlaneThrow(flight: PlaneFlight): void {
+  planeFlight = undefined;
+  disposePaperPlane(flight.model);
   spawnThrowBloom(flight.to, flight.target ? "#79ded8" : "#ffb81c");
-  const landedOn = flight.target;
-  if (landedOn && cards.includes(landedOn)) {
-    landedOn.blurLevel = 0;
-    landedOn.blurStep = 0;
-    landedOn.revealed = true;
-    refreshCardTexture(landedOn, true);
-    toggleCardTwist(card, true);
-    showToast(`✦ ${card.name} landed on ${landedOn.name} · opened at the landing place.`);
+  const target = flight.target;
+  if (target && cards.includes(target)) {
+    target.blurLevel = 0;
+    target.blurStep = 0;
+    target.revealed = true;
+    target.receivedNotes.push(`← ${flight.fromCard.name}: ${flight.note}`);
+    refreshCardTexture(target, true);
+    // Open the note where it landed: the target turns to its paper-planes face.
+    flipCardTo(target, "right");
+    showToast(`✦ plane landed on ${target.name} · the note opened at the landing place.`);
+    void deliverPaperPlaneToBackend(flight.fromCard, target, flight.note);
   } else {
-    showToast(`✦ ${card.name} landed in the room after a ${Math.round(flight.power * 100)}% flick.`);
+    showToast(`✦ the plane landed in the room after a ${Math.round(flight.power * 100)}% flick.`);
   }
 }
 
-function updateThrowFlight(now: number): void {
-  const flight = throwFlight;
+function updatePlaneFlight(now: number): void {
+  const flight = planeFlight;
   if (!flight) return;
   const progress =
     flight.duration <= 0
       ? 1
       : THREE.MathUtils.clamp((now - flight.startedAt) / flight.duration, 0, 1);
   const point = throwTrajectoryPoint(flight.from, flight.to, progress, flight.arcHeight);
-  flight.card.group.position.set(point.x, point.y, point.z);
-  flight.card.group.scale.copy(flight.fromScale).lerp(flight.toScale, Math.min(1, progress * 1.2));
-  flight.card.group.rotation.z = Math.sin(progress * Math.PI) * 0.3;
+  const fold = THREE.MathUtils.clamp((now - flight.startedAt) / PLANE_FOLD_MS, 0, 1);
+  const pose = foldPose(fold);
+  const group = flight.model.group;
+  group.position.set(point.x, point.y, point.z);
+  group.scale.setScalar(pose.sheetScale);
+  flight.model.leftWing.rotation.z = -pose.dihedral;
+  flight.model.rightWing.rotation.z = pose.dihedral;
+  flight.model.keel.rotation.x = pose.keelDrop;
+
+  const ahead = throwTrajectoryPoint(
+    flight.from,
+    flight.to,
+    Math.min(1, progress + 0.05),
+    flight.arcHeight,
+  );
+  group.lookAt(ahead.x, ahead.y, ahead.z);
+  // Still a sheet at launch: tip it up out of the hand as it folds.
+  group.rotateX(-(1 - fold) * 0.9);
+  group.rotateZ(Math.sin(progress * Math.PI) * 0.35);
 
   if (!flight.contact && progress < 1) {
     for (const other of cards) {
-      if (other === flight.card || other === flight.target || !other.group.visible) continue;
-      if (flight.card.group.position.distanceTo(other.group.position) < THROW_CONTACT_RADIUS) {
-        // Resistance on contact: the card stops where it hit instead of passing through.
+      if (other === flight.fromCard || other === flight.target || !other.group.visible) continue;
+      if (group.position.distanceTo(other.group.position) < THROW_CONTACT_RADIUS) {
+        // Resistance on contact: the plane stops where it hit instead of passing through.
         flight.contact = true;
-        flight.to.copy(flight.card.group.position);
+        flight.to.copy(group.position);
         flight.startedAt = now - flight.duration;
         break;
       }
     }
   }
-  if (progress >= 1) finishCardThrow(flight);
+  if (progress >= 1) finishPlaneThrow(flight);
 }
 
 function setBinCanHover(active: boolean): void {
@@ -6793,7 +6880,7 @@ function onPointerUp(event: PointerEvent): void {
     } else if (completedDrag.mode === "move" && completedDrag.card) {
       completedDrag.card.tiltZ = 0;
       if (throwVector) {
-        beginCardThrow(completedDrag.card, throwVector, throwTarget);
+        beginPlaneThrow(completedDrag.card, throwVector, throwTarget);
       } else {
         const targetPeer = !completedDrag.freeMove ? findPeerCardAtPointer(completedDrag.card) : undefined;
         if (targetPeer) {
@@ -7656,7 +7743,6 @@ function animate(now = 0): void {
   }
 
   for (const [index, card] of cards.entries()) {
-    if (throwFlight?.card === card) continue;
     if (drag?.card === card && drag.mode === "move") continue;
 
     const slotAngle = index * slotStep;
@@ -7903,7 +7989,7 @@ function animate(now = 0): void {
 
   updateTrashFlight(now);
   updateAirplane(now);
-  updateThrowFlight(now);
+  updatePlaneFlight(now);
   updateThrowBlooms(now);
   if (!reducePreviewMotion) {
     overheadHaloGroup.rotation.y = now * 0.00012;

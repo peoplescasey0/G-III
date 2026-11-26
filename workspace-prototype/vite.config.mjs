@@ -1,5 +1,7 @@
 import { defineConfig, loadEnv } from "vite";
 import { createGuestApi } from "./guest-api.mjs";
+import { isLanClientAllowed } from "./lan-access.mjs";
+import { attachGuestDisplayProxy } from "./vnc-proxy.mjs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -21,10 +23,18 @@ export default defineConfig(({ mode }) => {
       {
         name: "post-card-guest-api",
         configureServer(server) {
-          server.middlewares.use(createGuestApi());
+          const api = createGuestApi();
+          server.middlewares.use(api);
+          attachGuestDisplayProxy(server.httpServer, api.displayPort, (address) =>
+            isLanClientAllowed(address),
+          );
         },
         configurePreviewServer(server) {
-          server.middlewares.use(createGuestApi());
+          const api = createGuestApi();
+          server.middlewares.use(api);
+          attachGuestDisplayProxy(server.httpServer, api.displayPort, (address) =>
+            isLanClientAllowed(address),
+          );
         },
       },
     ],

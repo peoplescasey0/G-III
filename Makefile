@@ -16,7 +16,7 @@ ISO_FILE := target/postcard-spatial-os.iso
 RAW_DISK := target/postcard-os.raw
 RAMDISK_IMG := ramdisk.img
 
-.PHONY: all check userland ramdisk secure kernel iso disk stage-vm check-vm qemu-boot qemu-shell test test-e2e test-spatial clean help frontend stripe-probe stripe-sync
+.PHONY: all check userland ramdisk secure kernel iso disk stage-vm check-vm qemu-boot qemu-shell test test-e2e test-spatial clean help frontend dev-lan stripe-probe stripe-sync
 
 all: userland ramdisk secure kernel iso
 
@@ -58,6 +58,10 @@ stage-vm:
 check-vm:
 	@echo "=== Checking guest images, firmware and QEMU binaries ==="
 	./scripts/check_vm_images.sh
+
+dev-lan:
+	@echo "=== Starting the studio in LAN mode (web UI + guest API on this network) ==="
+	cd workspace-prototype && npm run dev:lan
 
 frontend:
 	@echo "=== Building workspace-prototype frontend ==="
@@ -121,6 +125,7 @@ help:
 	@echo "  make disk         - Prepare raw virtual disk (target/postcard-os.raw)"
 	@echo "  make stage-vm     - Copy kernel/ramdisk into workspace-prototype/data/master-images"
 	@echo "  make check-vm     - Verify golden images, firmware and QEMU binaries before booting"
+	@echo "  make dev-lan      - Run the studio for a phone on the same Wi-Fi (web UI only)"
 	@echo "  make frontend     - Build workspace-prototype frontend (Vite & TypeScript)"
 	@echo "  make stripe-probe - Probe Stripe API key capabilities and catalog status"
 	@echo "  make stripe-sync  - Idempotently sync Stripe products/prices and update .env"

@@ -4,12 +4,15 @@ import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createGuestApi } from "./guest-api.mjs";
+import { isLanClientAllowed } from "./lan-access.mjs";
+import { attachGuestDisplayProxy } from "./vnc-proxy.mjs";
 
 const appDir = path.dirname(fileURLToPath(import.meta.url));
 const distDir = path.join(appDir, "dist");
 const port = Number(process.env.PORT || 5173);
 const host = process.env.HOST || "127.0.0.1";
 const guestApi = createGuestApi();
+
 
 const MIME_TYPES = {
   ".html": "text/html; charset=utf-8",
@@ -52,6 +55,8 @@ const server = createServer((req, res) => {
     }
   });
 });
+
+attachGuestDisplayProxy(server, guestApi.displayPort, (address) => isLanClientAllowed(address));
 
 server.listen(port, host, () => {
   console.log(`Post Card Spatial OS Studio running at http://${host}:${port}`);
