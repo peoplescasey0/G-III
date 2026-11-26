@@ -38,7 +38,12 @@ try {
         }
     }
 
-    & cargo build --release --target x86_64-unknown-none
+    Push-Location (Join-Path $PSScriptRoot "kernel")
+    try {
+        & cargo build --release --target x86_64-unknown-none --target-dir (Join-Path $PSScriptRoot "target")
+    } finally {
+        Pop-Location
+    }
     if ($LASTEXITCODE -ne 0) {
         throw "Kernel build failed with exit code $LASTEXITCODE"
     }

@@ -12,6 +12,12 @@ import {
   type OnCardAction,
 } from "./card-actions";
 import { carouselPoseFromAngle } from "./carousel-pose";
+import {
+  createSpatialClient,
+  managedPoses,
+  type SpatialPose,
+  type SpatialSnapshot,
+} from "../spatial-protocol.mjs";
 import { CARD_BUTTON_IDS, cardButtonRect, hitCardButton, type CardButtonId } from "./card-buttons";
 import {
   BUTLER_CHOICE_LABELS,
@@ -142,6 +148,15 @@ type SystemCard = {
   layoutOffset: THREE.Vector3;
   layoutPosition: THREE.Vector3;
   orbitAngle: number;
+  /**
+   * Pose owned by the Ring-0 spatial hypervisor. When set, the card is pinned
+   * to the hypervisor's pose instead of the carousel's.
+   */
+  hypervisorPose?: {
+    position: THREE.Vector3;
+    quaternion: THREE.Quaternion;
+    scale: THREE.Vector3;
+  } | null;
   lastTextureKey?: string;
   /** 0..1 corner-peel amount while the display corner is being pulled. */
   peel?: number;
@@ -967,6 +982,89 @@ scene.add(studioMotes);
 
 const CARD_WIDTH = 2.15;
 const CARD_HEIGHT = 3.2;
+
+/**
+ * Spatial hypervisor control plane (protocol v1).
+ *
+ * The studio speaks metres; the canonical workspace uses 100 units per metre, so
+ * poses cross the VM-control API in centimetre-scale workspace units — the same
+ * units as the Ring-0 camera in `kernel/src/spatial_wm.rs`.
+ */
+const SPATIAL_UNITS_PER_METRE = 100;
+const spatialClient = createSpatialClient();
+let lastSpatialSync = 0;
+let spatialSyncInFlight = false;
+
+function toWorkspacePose(card: SystemCard): SpatialPose {
+  return {
+    position: {
+      x: card.group.position.x * SPATIAL_UNITS_PER_METRE,
+      y: card.group.position.y * SPATIAL_UNITS_PER_METRE,
+      z: card.group.position.z * SPATIAL_UNITS_PER_METRE,
+    },
+    rotation: {
+      x: card.group.quaternion.x,
+      y: card.group.quaternion.y,
+      z: card.group.quaternion.z,
+      w: card.group.quaternion.w,
+    },
+    scale: { x: card.group.scale.x, y: card.group.scale.y, z: card.group.scale.z },
+  };
+}
+
+function applyHypervisorPoses(snapshot: SpatialSnapshot): void {
+  const managed = new Map(managedPoses(snapshot).map((pose) => [pose.id, pose]));
+  for (const card of cards) {
+    const pose = managed.get(card.id);
+    if (!pose) {
+      card.hypervisorPose = null;
+      continue;
+    }
+    card.hypervisorPose = {
+      position: new THREE.Vector3(
+        pose.position.x / SPATIAL_UNITS_PER_METRE,
+        pose.position.y / SPATIAL_UNITS_PER_METRE,
+        pose.position.z / SPATIAL_UNITS_PER_METRE,
+      ),
+      quaternion: new THREE.Quaternion(
+        pose.rotation.x,
+        pose.rotation.y,
+        pose.rotation.z,
+        pose.rotation.w,
+      ),
+      scale: new THREE.Vector3(pose.scale.x, pose.scale.y, pose.scale.z),
+    };
+  }
+}
+
+/**
+ * Pushes the studio's card poses to the spatial hypervisor and adopts any pose
+ * the hypervisor has taken ownership of. Best-effort: when the host service is
+ * not running the studio keeps its own carousel behaviour untouched.
+ */
+function syncSpatialHypervisor(now: number): void {
+  if (spatialSyncInFlight || now - lastSpatialSync < 1000) return;
+  if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+  lastSpatialSync = now;
+  spatialSyncInFlight = true;
+  void spatialClient
+    .sync({
+      cards: cards.map((card) => ({
+        id: card.id,
+        width: CARD_WIDTH * SPATIAL_UNITS_PER_METRE,
+        height: CARD_HEIGHT * SPATIAL_UNITS_PER_METRE,
+        pose: toWorkspacePose(card),
+      })),
+      focused: cards[selectedIndex]?.id,
+    })
+    .then(applyHypervisorPoses)
+    .catch(() => {
+      // The hypervisor is optional for the prototype studio.
+    })
+    .finally(() => {
+      spatialSyncInFlight = false;
+    });
+}
 const GUEST_PREVIEW_WIDTH = 468;
 const GUEST_PREVIEW_HEIGHT = 328;
 const GUEST_PREVIEW_X = (640 - GUEST_PREVIEW_WIDTH) / 2;
@@ -7143,6 +7241,7 @@ function animate(now = 0): void {
   const dt = lastFrameTime > 0 ? Math.min(0.05, (now - lastFrameTime) / 1000) : 1 / 60;
   lastFrameTime = now;
   const reducePreviewMotion = prefersReducedMotion();
+  syncSpatialHypervisor(now);
 
   // Smoothly damp turntable towards target with organic spring ease
   if (drag?.mode === "carousel") {
@@ -7287,6 +7386,20 @@ function animate(now = 0): void {
         card.group.rotation.x = THREE.MathUtils.damp(card.group.rotation.x, card.tiltX, 11, dt);
         card.group.rotation.z = THREE.MathUtils.damp(card.group.rotation.z, card.tiltZ, 11, dt);
       }
+    }
+
+    // One authority per frame for the pose. A card the spatial hypervisor owns
+    // (directly, or through the live kernel bridge) takes its pose verbatim and
+    // is finished for this frame, so the carousel's dampers and the 1.68 m floor
+    // clamp never argue with an asynchronously delivered pose. The previous
+    // order damped toward the carousel slot, clamped the result, and only then
+    // copied the hypervisor pose over it: pinned cards were re-fought every
+    // frame and any pose below the floor was thrown away before it could show.
+    if (card.hypervisorPose) {
+      card.group.position.copy(card.hypervisorPose.position);
+      card.group.quaternion.copy(card.hypervisorPose.quaternion);
+      card.group.scale.copy(card.hypervisorPose.scale);
+      continue;
     }
 
     if (reducePreviewMotion) {

@@ -40,12 +40,14 @@
 
 | Kernel Generation | Directory in Workspace | Source Repo Origin | Modules | Total Rust LOC | Shell Commands | Core Purpose & Capabilities |
 | :--- | :--- | :--- | :---: | :---: | :---: | :--- |
-| **Kernel #1A (Base Micro-Host)** | `micro-host/src/` | [`peoplescasey0/micro-host`](https://github.com/peoplescasey0/micro-host) | **14** | **2,523** | **9** | Minimal freestanding `x86_64` ring-0/ring-3 micro-kernel: GDT/TSS, IDT, 8259 PIC, PS/2 Keyboard, VGA text buffer, 4-level paging, bump heap, round-robin scheduler, TAR ramdisk, and Ring-3 `iretq` user-mode execution. |
-| **Kernel #1B (Extended Micro-Host)** | `micro-host/kernel/src/` | [`peoplescasey0/micro-host`](https://github.com/peoplescasey0/micro-host) | **17** | **3,447** | **13** | Everything in **#1A** plus hardware PCI bus enumeration (`pci.rs`), capability-based Ring-3 security sandboxing (`sandbox.rs`), and VirtIO-blk block storage + MBR/GPT partitioning + print spooling (`storage.rs`). |
+| **Kernel #1A (Base Micro-Host)** | `micro-host/src/` *(upstream)* | [`peoplescasey0/micro-host`](https://github.com/peoplescasey0/micro-host) | **14** | **2,523** | **9** | Minimal freestanding `x86_64` ring-0/ring-3 micro-kernel: GDT/TSS, IDT, 8259 PIC, PS/2 Keyboard, VGA text buffer, 4-level paging, bump heap, round-robin scheduler, TAR ramdisk, and Ring-3 `iretq` user-mode execution. |
+| **Kernel #1B (Extended Micro-Host)** | `micro-host/kernel/src/` *(upstream)* | [`peoplescasey0/micro-host`](https://github.com/peoplescasey0/micro-host) | **17** | **3,447** | **13** | Everything in **#1A** plus hardware PCI bus enumeration (`pci.rs`), capability-based Ring-3 security sandboxing (`sandbox.rs`), and VirtIO-blk block storage + MBR/GPT partitioning + print spooling (`storage.rs`). |
 | **Kernel #2 (`G-III` Top-End AI-Native & Patent-Suite Kernel)** | `kernel/src/` & `src/` | [`peoplescasey0/G-III`](https://github.com/peoplescasey0/G-III) *(Top-End Evolution)* | **22** | **8,079** | **25** | **100% strict superset of Kernel #1B** (`+4,632 LOC`) adding VESA `1024x768x32bpp` graphical framebuffer, Ring-0 3D Spatial Window Manager, Asymmetric Co-Processor offload, Zero-Copy Execution Pipeline, CXL 3.0 pooled memory fabric, and **6 Patent-Backed Hardware/Enterprise Subsystems** (Out-of-Band IME Neural Co-Processor, 9-DoF/LiDAR/Event Spatial Perception, Agentic Self-Healing, IBM MIaaS Live VM Disk Swap, Pocket Modular Computer Brain, Applied Materials Semiconductor Fab R2R Control, Risk-Based Augmented Secrets Graph, and Telecom DPLL + DDS + EW-RLS Clock/Time Synchronization). |
 | **3D Spatial Studio Host** | `workspace-prototype/` | [`peoplescasey0/Post-Card-Spatial-O.S`](https://github.com/peoplescasey0/Post-Card-Spatial-O.S) | **Three.js + Vite + QMP/noVNC** | **~5,400 TS/MJS** | **57 Automated Tests** | Interactive 3D WebGL card carousel that boots **Kernel #2 (`G-III`)** live inside the **Post Card · Spatial OS** 3D card via QEMU noVNC WebSocket (`127.0.0.1:5700`), QMP (`127.0.0.1:4444`), and bidirectional COM1 Serial Bridge (`127.0.0.1:4544`). |
 
 ---
+
+> **Note:** Kernel #1 is no longer vendored in this repository — the `micro-host/` tree was dropped. Only its recorded module/LOC counts are kept here for comparison; the code lives at [`peoplescasey0/micro-host`](https://github.com/peoplescasey0/micro-host).
 
 ## 2. Side-by-Side Capability Matrix: Kernel #1 (`micro-host`) vs. Kernel #2 (`G-III Top-End`)
 
@@ -134,9 +136,8 @@ flowchart TB
 /home/damion/Desktop/next2/
 ├── kernel/src/                  # Kernel #2 (G-III Top-End Kernel - 22 modules, 8,079 LOC)
 ├── src/                         # Synchronized root build of Kernel #2 (G-III Top-End Kernel)
-├── micro-host/                  # Complete drop of Kernel #1 (micro-host repo as a whole)
-│   ├── src/                     # Kernel #1A: Base Micro-Kernel (14 modules, 2,523 LOC)
-│   └── kernel/src/              # Kernel #1B: Extended Micro-Host Kernel (17 modules, 3,447 LOC)
+# Kernel #1 (micro-host) is not vendored here; it lives in its own repository at
+# github.com/peoplescasey0/micro-host (14-module 1A and 17-module 1B baselines).
 ├── workspace-prototype/         # Three.js + Vite + noVNC 3D Spatial Studio (from Post-Card-Spatial-O.S)
 │   ├── guest-api.mjs            # Live QEMU hypervisor controller (VNC 5700, QMP 4444, Serial 4544)
 │   ├── src/main.ts              # 3D Spatial Carousel wired to Post Card · Spatial OS kernel card
@@ -163,9 +164,10 @@ flowchart TB
 ./scripts/shell_test.sh --kernel
 ```
 
-### Build & Verify Kernel #1 (`micro-host` Baseline inside `./micro-host/`)
+### Build & Verify Kernel #1 (`micro-host` Baseline)
+Kernel #1 is not part of this working tree (the vendored `micro-host/` drop was removed). Build it from upstream:
 ```bash
-cd micro-host
+git clone https://github.com/peoplescasey0/micro-host && cd micro-host
 cargo check --target x86_64-unknown-none
 cd kernel && cargo check --target x86_64-unknown-none
 ```

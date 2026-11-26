@@ -8,6 +8,8 @@ import { constants as fsConstants, existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { handleStripeRequest } from "./stripe-api.mjs";
+import { createSpatialHypervisor } from "./spatial-hypervisor.mjs";
+import { createKernelBridge } from "./kernel-bridge.mjs";
 
 const execFileAsync = promisify(execFile);
 const appDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -2687,8 +2689,14 @@ export function createGuestApi(options = {}) {
     };
   }
 
+  // The bridge is lazy: QEMU only starts when the control plane asks for a
+  // kernel frame, so the studio still runs with no QEMU installed.
+  const spatial = createSpatialHypervisor({ kernel: createKernelBridge() });
+
   return async (request, response, next) => {
     if (await handleStripeRequest(request, response)) return;
+    // Spatial hypervisor control plane (protocol v1), loopback only.
+    if (await spatial.route(request, response)) return;
     const url = new URL(request.url ?? "/", "http://localhost");
     if (!url.pathname.startsWith("/api/guest/")) {
       next();

@@ -883,44 +883,127 @@ fn spatial_wm_selftest() {
     spatial_wm::init_spatial_workspace();
     assert_eq!(spatial_wm::focused_card_id(), Some(1));
 
-    // 1. Hit-test Card 1 (100..420, 80..280) and Card 2 (450..850, 120..420)
-    let hit1 = spatial_wm::hit_test_spatial_cards(spatial_wm::PointerEvent {
-        x: 200,
-        y: 150,
+    // 1. Real ray/plane hit testing: the viewport-centre ray lands on card 1.
+    let hit = spatial_wm::hit_test_detailed(spatial_wm::PointerEvent {
+        x: 500,
+        y: 400,
         pressed: false,
         dragged: false,
-    });
-    assert_eq!(hit1, Some(1));
+    })
+    .expect("centre ray hits card 1");
+    assert_eq!(hit.card_id, 1);
+    assert!(hit.distance > 0.0);
+    assert!(hit.u > 0.0 && hit.u < 1.0 && hit.v > 0.0 && hit.v < 1.0);
 
-    let miss = spatial_wm::hit_test_spatial_cards(spatial_wm::PointerEvent {
-        x: 10,
-        y: 10,
+    // 2. A ray through empty space hits nothing.
+    assert_eq!(
+        spatial_wm::hit_test_spatial_cards(spatial_wm::PointerEvent {
+            x: 60,
+            y: 700,
+            pressed: false,
+            dragged: false,
+        }),
+        None
+    );
+
+    // 3. Card 2 sits further down the view axis and is individually hittable.
+    let second = spatial_wm::hit_test_detailed(spatial_wm::PointerEvent {
+        x: 880,
+        y: 350,
         pressed: false,
         dragged: false,
-    });
-    assert_eq!(miss, None);
+    })
+    .expect("right ray hits card 2");
+    assert_eq!(second.card_id, 2);
+    assert!(second.distance > hit.distance);
 
-    // 2. Click and drag Card 2 -> shifts focus to Card 2 and translates its 3D position by (+2.0, +1.0)
+    // 4. Press, then drag: the card moves by the real ray/plane displacement.
+    let before = spatial_wm::with_world(|world| world.card(1).expect("card 1").pose.position);
     spatial_wm::handle_spatial_input(spatial_wm::PointerEvent {
         x: 500,
-        y: 200,
+        y: 400,
         pressed: true,
+        dragged: false,
+    });
+    assert_eq!(spatial_wm::focused_card_id(), Some(1));
+    spatial_wm::handle_spatial_input(spatial_wm::PointerEvent {
+        x: 560,
+        y: 430,
+        pressed: false,
         dragged: true,
     });
-    assert_eq!(spatial_wm::focused_card_id(), Some(2));
-    let cards = spatial_wm::active_cards();
-    let c2 = cards.iter().find(|c| c.id == 2).expect("card 2 present");
-    assert!(c2.focused);
-    assert_eq!(c2.position.x as i32, 452);
-    assert_eq!(c2.position.y as i32, 121);
+    let after = spatial_wm::with_world(|world| world.card(1).expect("card 1").pose.position);
+    let delta = after - before;
+    assert!(delta.x > 50.0, "drag x follows the pointer: {}", delta.x);
+    assert!(delta.y < -20.0, "drag y follows the pointer: {}", delta.y);
+    assert!(delta.z.abs() < 0.01, "drag stays in the card plane: {}", delta.z);
 
+    // 5. Focus is a stack; raising a background card routes input to it.
+    assert_eq!(spatial_wm::with_world(|world| world.sys_focus_card(2)), 0);
+    assert_eq!(spatial_wm::focused_card_id(), Some(2));
+
+    // 6. The hypervisor syscall surface drives the same world model.
+    let created = spatial_wm::with_world(|world| {
+        world.sys_create_card(spatial_wm::CardDesc {
+            width: 100.0,
+            height: 100.0,
+            pose: spatial_wm::PoseDesc {
+                position: [0.0, 0.0, 0.0],
+                rotation: [0.0, 0.0, 0.0, 1.0],
+                scale: [1.0, 1.0, 1.0],
+            },
+        })
+    });
+    assert!(created > 0, "sys_create_card returned {}", created);
+    let created = created as u32;
+    let syscall_hit = spatial_wm::with_world(|world| {
+        world.sys_hit_test(spatial_wm::RayDesc {
+            origin: [0.0, 0.0, -80.0],
+            direction: [0.0, 0.0, 1.0],
+        })
+    })
+    .expect("syscall ray hits the created card");
+    assert_eq!(syscall_hit.card_id, created);
+    assert_eq!(
+        spatial_wm::with_world(|world| world.sys_destroy_card(created as u64)),
+        0
+    );
+
+    // 7. Rotation is part of the model: a card yawed 90° is edge-on to a
+    //    head-on ray and therefore cannot be hit.
+    let edge_on = spatial_wm::SpatialCard::new(
+        9,
+        spatial_wm::Pose::uniform(
+            spatial_wm::Vec3::new(0.0, 0.0, 0.0),
+            spatial_wm::Quat::from_axis_angle(
+                spatial_wm::Vec3::UNIT_Y,
+                core::f32::consts::FRAC_PI_2,
+            ),
+            1.0,
+        ),
+        200.0,
+        100.0,
+    );
+    let head_on = spatial_wm::Ray::new(
+        spatial_wm::Vec3::new(0.0, 0.0, -100.0),
+        spatial_wm::Vec3::UNIT_Z,
+    )
+    .expect("ray");
+    assert!(spatial_wm::intersect_card(&head_on, &edge_on).is_none());
+
+    let cards = spatial_wm::active_cards();
+    let painter_order = spatial_wm::paint_order();
     serial_println!(
-        "[ok] spatial window manager & raycaster: {} cards active, focus shifted to card #{}, drag=({}, {}, {})",
+        "[ok] spatial hypervisor: {} cards, ray hit #{} at distance {:.1}, drag delta=({:.1}, {:.1}, {:.1}), z-order={} cards, focus=#{:?}, revision={}",
         cards.len(),
-        c2.id,
-        c2.position.x as i32,
-        c2.position.y as i32,
-        c2.position.z as i32
+        hit.card_id,
+        hit.distance,
+        delta.x,
+        delta.y,
+        delta.z,
+        painter_order.len(),
+        spatial_wm::focused_card_id(),
+        spatial_wm::world_version()
     );
 }
 

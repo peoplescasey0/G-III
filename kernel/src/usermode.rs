@@ -13,6 +13,18 @@
 //!   2 getpid()          task id
 //!   3 sleep(ticks)      10 ms ticks
 //!   4 yield()
+//!   5 waitpid(task)     non-blocking exit status, -11 while still running
+//!   6 uptime_ticks()
+//!  32 spatial_create_card(*const CardDesc) -> card id
+//!  33 spatial_destroy_card(card_id)
+//!  34 spatial_set_pose(card_id, *const PoseDesc)
+//!  35 spatial_focus_card(card_id)
+//!  36 spatial_hit_test(*const RayDesc, *mut HitDesc) -> card id
+//!
+//! The spatial calls hand descriptors to the Ring-0 spatial hypervisor
+//! (`crate::spatial_wm`). Every pointer is range-checked against the caller's
+//! own USER pages before it is read or written; the hypervisor itself never
+//! touches a raw user pointer.
 
 use crate::sync::{Mutex, NoPreempt};
 use crate::{gdt, kprint, kprintln, paging, sched};
@@ -41,6 +53,14 @@ pub const SYS_SLEEP: u64 = 3;
 pub const SYS_YIELD: u64 = 4;
 pub const SYS_WAITPID: u64 = 5;
 pub const SYS_UPTIME_TICKS: u64 = 6;
+
+/// Spatial hypervisor calls. Numbers and `#[repr(C)]` descriptors are owned by
+/// `crate::spatial_wm`; these aliases keep the dispatcher table readable.
+pub const SYS_SPATIAL_CREATE_CARD: u64 = crate::spatial_wm::SYS_SPATIAL_CREATE_CARD;
+pub const SYS_SPATIAL_DESTROY_CARD: u64 = crate::spatial_wm::SYS_SPATIAL_DESTROY_CARD;
+pub const SYS_SPATIAL_SET_POSE: u64 = crate::spatial_wm::SYS_SPATIAL_SET_POSE;
+pub const SYS_SPATIAL_FOCUS_CARD: u64 = crate::spatial_wm::SYS_SPATIAL_FOCUS_CARD;
+pub const SYS_SPATIAL_HIT_TEST: u64 = crate::spatial_wm::SYS_SPATIAL_HIT_TEST;
 
 /// Number of processes killed by the kernel after a fault.
 pub static KILLED: AtomicUsize = AtomicUsize::new(0);
@@ -325,6 +345,16 @@ fn exit_current(code: i64) -> ! {
 /// Checks that [ptr, ptr+len) lies in the user region on USER pages of the
 /// caller's own address space.
 fn user_range_ok(ptr: u64, len: u64) -> bool {
+    user_range_check(ptr, len, false)
+}
+
+/// As [`user_range_ok`], but every page must also be writable. Used by syscalls
+/// that copy a result structure back into user memory.
+fn user_range_writable(ptr: u64, len: u64) -> bool {
+    user_range_check(ptr, len, true)
+}
+
+fn user_range_check(ptr: u64, len: u64, writable: bool) -> bool {
     if !is_user_task() {
         return false;
     }
@@ -335,7 +365,9 @@ fn user_range_ok(ptr: u64, len: u64) -> bool {
     let mut page = ptr & !0xfff;
     while page < end {
         match paging::page_flags(page) {
-            Some(f) if f.contains(PageTableFlags::USER_ACCESSIBLE) => {}
+            Some(f)
+                if f.contains(PageTableFlags::USER_ACCESSIBLE)
+                    && (!writable || f.contains(PageTableFlags::WRITABLE)) => {}
             _ => return false,
         }
         page += 4096;
@@ -373,6 +405,54 @@ extern "C" fn syscall_dispatch(a1: u64, a2: u64, _a3: u64, nr: u64) -> i64 {
             exit_code(a1).unwrap_or(-11) // -11 = EAGAIN if still running
         }
         SYS_UPTIME_TICKS => crate::pic::ticks() as i64,
+        SYS_SPATIAL_CREATE_CARD => {
+            let size = core::mem::size_of::<crate::spatial_wm::CardDesc>() as u64;
+            if !user_range_ok(a1, size) {
+                return crate::spatial_wm::EFAULT;
+            }
+            // SAFETY: `user_range_ok` proved the whole descriptor lies in the
+            // caller's own USER pages. `read_unaligned` tolerates an unaligned
+            // user pointer, and `CardDesc` is `repr(C)` + `Copy`.
+            let desc = unsafe { core::ptr::read_unaligned(a1 as *const crate::spatial_wm::CardDesc) };
+            crate::spatial_wm::with_world(|world| world.sys_create_card(desc))
+        }
+        SYS_SPATIAL_DESTROY_CARD => {
+            crate::spatial_wm::with_world(|world| world.sys_destroy_card(a1))
+        }
+        SYS_SPATIAL_SET_POSE => {
+            let size = core::mem::size_of::<crate::spatial_wm::PoseDesc>() as u64;
+            if !user_range_ok(a2, size) {
+                return crate::spatial_wm::EFAULT;
+            }
+            // SAFETY: validated above; see `SYS_SPATIAL_CREATE_CARD`.
+            let desc = unsafe { core::ptr::read_unaligned(a2 as *const crate::spatial_wm::PoseDesc) };
+            crate::spatial_wm::with_world(|world| world.sys_set_pose(a1, desc))
+        }
+        SYS_SPATIAL_FOCUS_CARD => {
+            crate::spatial_wm::with_world(|world| world.sys_focus_card(a1))
+        }
+        SYS_SPATIAL_HIT_TEST => {
+            let ray_size = core::mem::size_of::<crate::spatial_wm::RayDesc>() as u64;
+            let hit_size = core::mem::size_of::<crate::spatial_wm::HitDesc>() as u64;
+            if !user_range_ok(a1, ray_size) || !user_range_writable(a2, hit_size) {
+                return crate::spatial_wm::EFAULT;
+            }
+            // SAFETY: the ray descriptor was validated readable above.
+            let ray = unsafe { core::ptr::read_unaligned(a1 as *const crate::spatial_wm::RayDesc) };
+            match crate::spatial_wm::with_world(|world| world.sys_hit_test(ray)) {
+                Ok(hit) => {
+                    // SAFETY: the destination was validated writable above.
+                    unsafe {
+                        core::ptr::write_unaligned(
+                            a2 as *mut crate::spatial_wm::HitDesc,
+                            crate::spatial_wm::HitDesc::from_hit(&hit),
+                        );
+                    }
+                    hit.card_id as i64
+                }
+                Err(code) => code,
+            }
+        }
         _ => -1,
     }
 }

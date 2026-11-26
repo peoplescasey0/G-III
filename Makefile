@@ -16,7 +16,7 @@ ISO_FILE := target/postcard-spatial-os.iso
 RAW_DISK := target/postcard-os.raw
 RAMDISK_IMG := ramdisk.img
 
-.PHONY: all check userland ramdisk secure kernel iso disk qemu-boot qemu-shell test test-e2e clean help frontend stripe-probe stripe-sync
+.PHONY: all check userland ramdisk secure kernel iso disk qemu-boot qemu-shell test test-e2e test-spatial clean help frontend stripe-probe stripe-sync
 
 all: userland ramdisk secure kernel iso
 
@@ -84,6 +84,10 @@ test: iso disk
 	./scripts/shell_test.sh --disk
 	@echo "All tests passed successfully!"
 
+test-spatial:
+	@echo "=== Running spatial hypervisor host unit tests (no QEMU) ==="
+	./scripts/test_spatial_wm_host.sh
+
 test-e2e:
 	@echo "=== Running Dual-Track E2E Test Suite (Tiers 1-4) ==="
 	./tests/run_e2e_tests.sh
@@ -113,5 +117,6 @@ help:
 	@echo "  make qemu-boot    - Run QEMU with serial console"
 	@echo "  make qemu-shell   - Run automated interactive serial shell test"
 	@echo "  make test         - Run secure vault unit tests, boot test, and shell test"
+	@echo "  make test-spatial - Run spatial hypervisor 3D math/hit-test unit tests on the host"
 	@echo "  make test-e2e     - Run Comprehensive Dual-Track E2E Test Suite (Tiers 1-4)"
 	@echo "  make clean        - Remove target build artifacts"

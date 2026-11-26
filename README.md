@@ -1,6 +1,6 @@
 # Post Card OS (`G-III`: `#2 with Top-End`) — Synthetic Micro-Host Core & 3D Spatial Studio
 
-A high-performance, bare-metal `x86_64` micro-host operating system (`407 KB` compiled `#![no_std]` ELF) written completely in Rust from scratch, unified with the `micro-host` baseline and the Three.js 3D Spatial Studio.
+A high-performance, bare-metal `x86_64` micro-host operating system (`407 KB` compiled `#![no_std]` ELF) written completely in Rust from scratch, descended from the upstream `micro-host` baseline and unified with the Three.js 3D Spatial Studio.
 
 ---
 
@@ -104,17 +104,16 @@ Architecting a production-grade micro-host operating system with:
 ## 📁 **Project Structure**
 
 ```
-micro-host/
-├── rust-toolchain.toml        # nightly-2024-12-01 with llvm-tools
-├── Cargo.toml                 # Dependencies + build profiles
-├── .cargo/config.toml         # Target + runner configuration
-└── src/
-    ├── main.rs                # Kernel entry point + panic handler
-    ├── serial.rs              # UART serial driver
-    ├── gdt.rs                 # Global Descriptor Table
-    ├── idt.rs                 # Interrupt Descriptor Table
-    ├── memory.rs              # Physical memory + paging
-    └── heap.rs                # Heap allocator
+kernel/                      # Ring-0 bare-metal kernel crate (the only kernel crate)
+├── src/                     # gdt, idt, pic, paging, heap, sched, usermode, shell, spatial_wm, ...
+├── Cargo.toml               # x86_64, spin, uart_16550, linked_list_allocator
+└── linker.ld                # Multiboot2 ELF layout (1 MiB load)
+user/                        # Ring-3 demo binaries (hello, evil, poke, peek)
+secure/                      # Host-side security crate (PCI, storage, sandbox, VFIO)
+workspace-prototype/         # Three.js 3D Spatial Studio + QEMU/serial kernel bridge (Vite, TS)
+scripts/                     # build_kernel.sh, build_user.sh, boot_test.sh, shell_test.sh, test_spatial_wm_host.sh
+supabase/                    # Backend schema & migrations
+Makefile                     # make kernel / make check / make test-spatial
 ```
 
 ## 🚀 **Build & Run**

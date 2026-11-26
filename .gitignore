@@ -1,8 +1,6 @@
 # Rust build outputs
 /target/
 /kernel/target/
-/micro-host/target/
-/micro-host/kernel/target/
 /user/target/
 **/*.rs.bk
 

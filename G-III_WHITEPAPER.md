@@ -41,11 +41,11 @@ This white paper presents **Post Card Spatial OS (`G-III`, codenamed "The Tortoi
 
 ## 2. System Architecture & Dual-Kernel Lineage
 
-The `G-III` repository preserves both generations of the kernel side-by-side so developers can audit the exact evolutionary delta from minimal micro-host to full cyber-physical spatial OS:
+The `G-III` repository evolves the lineage from the minimal `micro-host` kernel to the full cyber-physical spatial OS. Generation 1 is **no longer vendored** here: the `micro-host/` tree was dropped, and it lives in its own upstream repository at [`peoplescasey0/micro-host`](https://github.com/peoplescasey0/micro-host). The counts below are the recorded baseline for that comparison:
 
-1. **Generation 1 (`micro-host` Baseline — [micro-host/](file:///home/damion/Desktop/next2/micro-host))**:
-   - **Tier 1A ([micro-host/src/](file:///home/damion/Desktop/next2/micro-host/src) — 14 modules, `2,523 LOC`)**: Freestanding x86_64 boot, GDT/TSS with Double-Fault IST stack, IDT exception/IRQ vectors, 8259 PIC, PS/2 keyboard driver, VGA text console, 4-level page tables, bump heap, preemptive/cooperative round-robin scheduler, USTAR ramdisk, and Ring-3 `iretq` user-mode execution.
-   - **Tier 1B ([micro-host/kernel/src/](file:///home/damion/Desktop/next2/micro-host/kernel/src) — 17 modules, `3,447 LOC`)**: Adds bare-metal PCI bus enumeration (`0xCF8`/`0xCFC`), IOMMU VFIO passthrough guards, OpenSandbox workload identity & loopback enforcement, and MBR storage partitioning with async I/O spooling.
+1. **Generation 1 (`micro-host` Baseline — upstream [`peoplescasey0/micro-host`](https://github.com/peoplescasey0/micro-host))**:
+   - **Tier 1A (`micro-host/src/` — 14 modules, `2,523 LOC`)**: Freestanding x86_64 boot, GDT/TSS with Double-Fault IST stack, IDT exception/IRQ vectors, 8259 PIC, PS/2 keyboard driver, VGA text console, 4-level page tables, bump heap, preemptive/cooperative round-robin scheduler, USTAR ramdisk, and Ring-3 `iretq` user-mode execution.
+   - **Tier 1B (`micro-host/kernel/src/` — 17 modules, `3,447 LOC`)**: Adds bare-metal PCI bus enumeration (`0xCF8`/`0xCFC`), IOMMU VFIO passthrough guards, OpenSandbox workload identity & loopback enforcement, and MBR storage partitioning with async I/O spooling.
 2. **Generation 2 (`G-III` Top-End Kernel — [kernel/src/](file:///home/damion/Desktop/next2/kernel/src) & [src/](file:///home/damion/Desktop/next2/src) — 22 modules, `8,204 LOC`)**:
    - A strict superset (`+4,757 LOC`) adding the Zero-Copy Nervous System, CXL 3.0 memory pooling, VESA 3D Spatial Compositor, Out-of-Band IME Neural Co-Processor, 6 patent subsystems, and the Workshop Iron controller.
 

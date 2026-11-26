@@ -87,6 +87,21 @@ micro-host/
   - `2`: `SYS_GETPID() -> u64`
   - `3`: `SYS_SLEEP(ticks: u64) -> i64`
   - `4`: `SYS_YIELD() -> i64`
+  - `5`: `SYS_WAITPID(task: u64) -> i64` (poll; `-11` while still running)
+  - `6`: `SYS_UPTIME_TICKS() -> i64`
+  - `32`: `SYS_SPATIAL_CREATE_CARD(*const CardDesc) -> u32 card id`
+  - `33`: `SYS_SPATIAL_DESTROY_CARD(card_id: u64) -> i64`
+  - `34`: `SYS_SPATIAL_SET_POSE(card_id: u64, *const PoseDesc) -> i64`
+  - `35`: `SYS_SPATIAL_FOCUS_CARD(card_id: u64) -> i64`
+  - `36`: `SYS_SPATIAL_HIT_TEST(*const RayDesc, *mut HitDesc) -> i64 card id`
+- Spatial descriptors are `#[repr(C)]` and owned by `kernel/src/spatial_wm.rs`:
+  - `PoseDesc { position: [f32; 3], rotation: [f32; 4] /* xyzw */, scale: [f32; 3] }`
+  - `CardDesc { width: f32, height: f32, pose: PoseDesc }`
+  - `RayDesc { origin: [f32; 3], direction: [f32; 3] }`
+  - `HitDesc { card_id: u32, reserved: u32, distance: f32, point: [f32; 3], local: [f32; 3], u: f32, v: f32 }`
+- The dispatcher range-checks every descriptor against the caller's own USER
+  pages (`user_range_ok` / `user_range_writable`) before copying it. Errors are
+  `-EFAULT (-14)`, `-EINVAL (-22)`, `-ENOENT (-2)` and `-ENOSPC (-28)`.
 
 ### 2. Ramdisk Format ("RDSK") ↔ Kernel Embed
 - Magic: `[0x52, 0x44, 0x53, 0x4B]` (`"RDSK"`).
@@ -113,6 +128,65 @@ micro-host/
 - WebSocket VNC: `ws://${window.location.hostname || "127.0.0.1"}:${websocketPort}`.
 - QMP Control: TCP port `4444+`, JSON protocol for VM management and `send-key`.
 - Serial Console: TCP port `4544+` for terminal stream.
+
+### 6. Spatial VM-Control API + kernel bridge (protocol v2)
+- Transport: HTTP + JSON under `/api/spatial/`, served by the Vite dev/preview
+  middleware, loopback only (`403` otherwise). Every response carries
+  `protocol: { name: "postcard.spatial", version: 2 }`; clients must reject an
+  unknown name or version. v2 adds the kernel bridge routes and the `kernel`
+  card source.
+- World model: mirrors `kernel/src/spatial_wm.rs` — pose
+  `position/rotation(xyzw)/scale`, camera `1024×768`, FOV `60°`, located at
+  `(512, 384, -700)` looking down `+Z`, `+Y` up. One world unit ≈ one viewport
+  pixel at `z = 0`; the studio (metres) uses 100 units per metre.
+- Routes:
+  - `GET  /api/spatial/state?since=<revision>` → snapshot, or `304` when current.
+  - `POST /api/spatial/sync` `{ cards: [{ id, pose, width?, height? }], focused? }`
+    → snapshot. Poses from the studio are `source: "studio"`.
+  - `POST /api/spatial/pose` `{ id, pose, width?, height? }` → snapshot; the pose
+    becomes `source: "hypervisor"` and studio syncs no longer overwrite it.
+  - `POST /api/spatial/focus` `{ id }` → snapshot (raises the card to the top of
+    the focus stack).
+  - `POST /api/spatial/hit-test` `{ ray }` or `{ screen: { x, y } }` → `{ hit }`
+    (`cardId`, `distance`, `point`, `local`, `u`, `v`) or `null`.
+  - `POST /api/spatial/pointer` `{ x, y, pressed, dragged }` → `{ hit, snapshot }`,
+    resolved through the camera ray; drags apply the true ray/plane delta.
+  - `GET  /api/spatial/kernel` → `{ kernel }` bridge status (state, frame count,
+    revision, resolved `qemuPath`/`kernelPath`, recent serial log).
+  - `POST /api/spatial/kernel/start` / `/stop` → boot or kill the QEMU that hosts
+    the kernel on COM1.
+  - `POST /api/spatial/kernel/pull` → asks the live kernel for one frame, applies
+    it, returns `{ kernel, snapshot }`. Cards become `source: "kernel"`.
+  - `POST /api/spatial/kernel/map` `{ ids: { "1": "postcard-os" } }` → binds
+    kernel card ids to studio card ids (default `card-<n>`), so a kernel demo
+    card can drive a real card in the studio.
+  - `POST /api/spatial/sync` also performs a best-effort background pull while a
+    bridge is running, so the studio's existing 1 Hz sync is all it needs.
+- Snapshot shape: `revision`, `camera`, `focusedCardId`, `focusOrder`, and
+  `cards` in painter's order (farthest first) with `id`, `pose`, `width`,
+  `height`, `active`, `focused`, `source`.
+- Errors: `{ error: { code, message } }` with `400`/`403`/`404`/`409`/`413`/`415`,
+  plus `501` (`kernel_bridge_unavailable`) and `503` (`qemu_not_found`,
+  `kernel_not_found`, `kernel_timeout`, `qemu_exited`).
+- Implementation: `workspace-prototype/spatial-protocol.mjs` (shared contract and
+  3D math) and `workspace-prototype/spatial-hypervisor.mjs` (host world model and
+  routes). The studio adopts `source: "hypervisor"` and `source: "kernel"` poses
+  verbatim in `src/main.ts`.
+
+#### 6.1 Kernel bridge (live serial link, no longer a mirror only)
+- `shell.rs` gained `wmjson`: it prints exactly one line on COM1,
+  `SPATIALv1 {"v":1,"rev":N,"focus":M,"cards":[{id,px,py,pz,qx,qy,qz,qw,sx,sy,sz,w,h,active,focused}]}`,
+  produced by `World::write_json` (allocation-free, `core::fmt` only). Cards are
+  listed in painter's order.
+- `workspace-prototype/kernel-bridge.mjs` spawns
+  `qemu-system-x86_64 -kernel <elf> -serial stdio -monitor none -display none`,
+  writes `wmjson\r`, and parses the answered line; ids map `1` → `card-1`.
+- `POST /api/spatial/kernel/start` is required once (the bridge is lazy); after
+  that the studio's sync drives the pull. A stopped/absent bridge never affects
+  the studio: it falls back to the Node mirror of the same model.
+- Because the kernel owns the poses it reports, the studio's 1 Hz `sync` cannot
+  drag those cards back to the carousel, and a card the kernel stops reporting
+  is handed back to the studio.
 
 ---
 

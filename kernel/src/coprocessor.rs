@@ -186,10 +186,18 @@ pub fn run_neural_supervisory_copilot() -> Result<NeuralCopilotReport, &'static 
         .map_err(|_| "agentic self-healing failed")?;
 
     spatial_wm::init_spatial_workspace();
+    // Press to grab the card under the ray, then drag with a real sample so the
+    // hypervisor applies the true ray/plane displacement.
     spatial_wm::handle_spatial_input(spatial_wm::PointerEvent {
         x: 500,
-        y: 200,
+        y: 400,
         pressed: true,
+        dragged: false,
+    });
+    spatial_wm::handle_spatial_input(spatial_wm::PointerEvent {
+        x: 560,
+        y: 430,
+        pressed: false,
         dragged: true,
     });
     let active_cards = spatial_wm::active_cards().len();

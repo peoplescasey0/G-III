@@ -32,7 +32,8 @@ This repository contains two primary components plus supporting backend services
 - **Root Workspace scripts (`package.json`)**:
   - `npm run dev`, `npm run build`, `npm run preview`, and `npm test` delegate to `workspace-prototype`.
 - **Kernel verification**:
-  - Use `cargo check` / `cargo build` with the pinned nightly toolchain and run `.\boot_test.ps1` or `.\shell_test.ps1` to verify serial output via QEMU.
+  - `kernel/` is the only kernel crate (the old root `src/` crate was removed). Build it with `make kernel`, `scripts/build_kernel.sh`, or `cd kernel && cargo check --target x86_64-unknown-none` using the pinned nightly toolchain, then run `.\boot_test.ps1` or `.\shell_test.ps1` to verify serial output via QEMU.
+  - Host-side spatial math tests (no QEMU): `make test-spatial`.
 - **Workspace Prototype verification**:
   - Run `npm test` (`node --test` in `workspace-prototype`) and `npm run build` (`tsc --noEmit && vite build`).
 

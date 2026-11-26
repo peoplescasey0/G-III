@@ -47,6 +47,60 @@ cards use a persistent 64 GiB disk and their own software TPM 2.0 state. Up to
 four guests and 8 GiB of guest RAM can be active at once. Android remains an
 illustration, and paper-plane notes are still local prototype behavior.
 
+## Spatial hypervisor control plane
+
+The Ring-0 spatial hypervisor (`kernel/src/spatial_wm.rs`) models the workspace
+in 3D: every card has a pose (position, rotation quaternion, scale), cards are
+depth ordered, and pointer input is resolved by casting a ray from the camera
+through the card planes. That model is exposed to this prototype through a
+small, versioned VM-control API (`protocol v2`, `postcard.spatial`), documented
+in `PROJECT.md` §6 and implemented by `spatial-protocol.mjs` and
+`spatial-hypervisor.mjs`.
+
+- `GET /api/spatial/state` — world snapshot: revision, camera, focus stack and
+  cards in painter's order.
+- `POST /api/spatial/sync` — the studio pushes its card poses once a second.
+- `POST /api/spatial/pose` — a controller claims a card; the studio then pins it
+  to that pose (`source: "hypervisor"`) until the studio claims it back.
+- `POST /api/spatial/focus`, `/hit-test`, `/pointer` — focus stack, ray-plane hit
+  testing and true camera-ray dragging.
+
+All routes are loopback only. Without a running kernel the control plane answers
+from a Node mirror of the same math, so the studio behaves exactly as before —
+the sync is best-effort.
+
+## Live kernel bridge
+
+`kernel-bridge.mjs` replaces that mirror with the real thing: the kernel prints
+one `SPATIALv1 {json}` line on COM1 when the shell runs `wmjson`, and the bridge
+boots it under QEMU, asks for that line, and applies it. Cards the kernel reports
+become `source: "kernel"` and are pinned to the kernel's pose.
+
+```bash
+# once, with the dev server running (or use the same routes from any loopback client)
+curl -X POST http://127.0.0.1:5173/api/spatial/kernel/start
+curl -X POST http://127.0.0.1:5173/api/spatial/kernel/pull
+curl        http://127.0.0.1:5173/api/spatial/kernel
+```
+
+Kernel cards are addressed as `card-1`, `card-2`, … Bind them to real studio cards
+(the `postcard-os`, `android`, … cards) before pulling:
+
+```bash
+curl -X POST http://127.0.0.1:5173/api/spatial/kernel/map \
+  -H 'content-type: application/json' -d '{"ids":{"1":"postcard-os"}}'
+```
+
+Build the image first with `make kernel` (or point `POSTCARD_KERNEL` at it); QEMU
+is found at `C:\Program Files\qemu\qemu-system-x86_64.exe` on Windows, on `PATH`
+elsewhere, or via `POSTCARD_QEMU`. The bridge is lazy — nothing spawns until you
+ask — and `POST /api/spatial/kernel/stop` shuts it down. Once started, the studio's
+existing 1 Hz sync pulls a frame in the background, so the 3D cards follow the
+kernel's own pose state.
+
+If QEMU or the kernel image is missing the routes return `503` with the exact
+path they looked for instead of failing silently.
+
 ## Connect the Linux guest
 
 The guest service is part of the Vite development and preview servers; it

@@ -9,8 +9,13 @@ $bootDir = Join-Path $isoDir "boot"
 $grubDir = Join-Path $bootDir "grub"
 $isoFile = Join-Path $PSScriptRoot "target\postcard-spatial-os.iso"
 
-Write-Host "Building kernel..."
-& cargo build --release --target x86_64-unknown-none
+Write-Host "Building kernel (kernel/ crate)..."
+Push-Location (Join-Path $PSScriptRoot "kernel")
+try {
+    & cargo build --release --target x86_64-unknown-none --target-dir (Join-Path $PSScriptRoot "target")
+} finally {
+    Pop-Location
+}
 if ($LASTEXITCODE -ne 0) {
     throw "Kernel build failed with exit code $LASTEXITCODE"
 }

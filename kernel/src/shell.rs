@@ -214,6 +214,7 @@ fn run(line: &str) {
             kprintln!("fb              blit 0x00FF0000 pixel & spatial card to framebuffer");
             kprintln!("compose         run zero-copy sensor-driven multi-OS card compositor");
             kprintln!("wm              raycast & drag 3D spatial cards in the workspace");
+            kprintln!("wmjson          emit one SPATIALv1 JSON line on COM1 (host bridge)");
             kprintln!("copilot         run AI-native neural supervisory core & co-pilot");
             kprintln!("secrets         test risk-based augmented secrets & transitivity");
             kprintln!("vmdisk          hot-swap VM disk descriptor preserving UUID");
@@ -561,25 +562,69 @@ fn run(line: &str) {
             }
         }
         "wm" => {
+            // Pointer input is a real ray through the card planes: press to
+            // grab, then a drag sample applies the true ray/plane displacement.
             spatial_wm::handle_spatial_input(spatial_wm::PointerEvent {
                 x: 500,
-                y: 200,
+                y: 400,
                 pressed: true,
+                dragged: false,
+            });
+            spatial_wm::handle_spatial_input(spatial_wm::PointerEvent {
+                x: 560,
+                y: 430,
+                pressed: false,
                 dragged: true,
             });
-            for c in spatial_wm::active_cards() {
+            match spatial_wm::hit_test_detailed(spatial_wm::PointerEvent {
+                x: 560,
+                y: 430,
+                pressed: false,
+                dragged: false,
+            }) {
+                Some(hit) => kprintln!(
+                    "ray hit card #{} at ({:.1}, {:.1}, {:.1}) distance={:.1} uv=({:.2}, {:.2})",
+                    hit.card_id,
+                    hit.point.x,
+                    hit.point.y,
+                    hit.point.z,
+                    hit.distance,
+                    hit.u,
+                    hit.v
+                ),
+                None => kprintln!("ray hit no card"),
+            }
+            kprintln!(
+                "focus=#{:?} revision={} painter order (far to near):",
+                spatial_wm::focused_card_id(),
+                spatial_wm::world_version()
+            );
+            for c in spatial_wm::paint_order() {
                 kprintln!(
-                    "card #{}: pos=({}, {}, {}) size={}x{} active={} focused={}",
+                    "card #{}: pos=({:.1}, {:.1}, {:.1}) rot=({:.2}, {:.2}, {:.2}, {:.2}) scale=({:.2}, {:.2}, {:.2}) size={}x{} active={} focused={}",
                     c.id,
-                    c.position.x as i32,
-                    c.position.y as i32,
-                    c.position.z as i32,
+                    c.pose.position.x,
+                    c.pose.position.y,
+                    c.pose.position.z,
+                    c.pose.rotation.x,
+                    c.pose.rotation.y,
+                    c.pose.rotation.z,
+                    c.pose.rotation.w,
+                    c.pose.scale.x,
+                    c.pose.scale.y,
+                    c.pose.scale.z,
                     c.width as i32,
                     c.height as i32,
                     c.active,
                     c.focused
                 );
             }
+        }
+        "wmjson" | "wm-json" => {
+            // Host-bridge frame: exactly one line of `SPATIALv1 {json}` on COM1,
+            // consumed by workspace-prototype/kernel-bridge.mjs. Kept off the
+            // VGA console so the operator view stays readable.
+            crate::serial_println!("SPATIALv1 {}", spatial_wm::WireSnapshot);
         }
         "copilot" => {
             match coprocessor::run_neural_supervisory_copilot() {
