@@ -91,12 +91,26 @@ curl -X POST http://127.0.0.1:5173/api/spatial/kernel/map \
   -H 'content-type: application/json' -d '{"ids":{"1":"postcard-os"}}'
 ```
 
-Build the image first with `make kernel` (or point `POSTCARD_KERNEL` at it); QEMU
+Build the image first with `make kernel`, then run `make stage-vm` to copy it (and
+`ramdisk.img`) into `workspace-prototype/data/master-images/`, which is where the
+guest API loads them from by default; `POSTCARD_KERNEL`/`POSTCARD_RAMDISK`
+override those paths. QEMU
 is found at `C:\Program Files\qemu\qemu-system-x86_64.exe` on Windows, on `PATH`
 elsewhere, or via `POSTCARD_QEMU`. The bridge is lazy — nothing spawns until you
 ask — and `POST /api/spatial/kernel/stop` shuts it down. Once started, the studio's
 existing 1 Hz sync pulls a frame in the background, so the 3D cards follow the
 kernel's own pose state.
+
+The first pull after `start` waits for the kernel's `spatial>` prompt before it
+writes `wmjson`; a command sent into a COM1 that nobody is reading yet would be
+dropped, which is why a cold start used to end in `kernel_timeout`. A boot that
+never reaches the prompt now fails with the distinct `kernel_boot_timeout`.
+
+On Linux the bridge adds `-accel kvm` whenever `/dev/kvm` is readable and
+writable, so a boot takes a fraction of a second instead of the roughly ten
+seconds TCG needs. Force either mode with `POSTCARD_QEMU_ACCEL=tcg` or
+`POSTCARD_QEMU_ACCEL=kvm`; `GET /api/spatial/kernel` reports the accelerator in
+use alongside `booted`.
 
 If QEMU or the kernel image is missing the routes return `503` with the exact
 path they looked for instead of failing silently.

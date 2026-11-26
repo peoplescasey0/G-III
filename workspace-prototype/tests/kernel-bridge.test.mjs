@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { createServer } from "node:http";
 import { test } from "node:test";
-import { createKernelBridge, resolveQemuPath } from "../kernel-bridge.mjs";
+import { bridgeArguments, createKernelBridge, resolveAccel, resolveQemuPath } from "../kernel-bridge.mjs";
 import { createSpatialHypervisor } from "../spatial-hypervisor.mjs";
 import { managedPoses, parseKernelFrame } from "../spatial-protocol.mjs";
 
@@ -50,9 +50,18 @@ function harness(options = {}) {
     kernelPath: "/kernels/postcard-minimal-kernel",
     qemuPath: "/usr/bin/qemu-system-x86_64",
     exists: () => true,
+    accel: "tcg",
     ...options,
   });
   return { bridge, child, spawned };
+}
+
+/** A booted bridge whose fake guest has already printed its shell prompt. */
+function bootedHarness(options = {}) {
+  const harnessed = harness(options);
+  harnessed.bridge.start();
+  harnessed.child.send("spatial> ");
+  return harnessed;
 }
 
 test("resolveQemuPath prefers POSTCARD_QEMU over the platform defaults", () => {
@@ -82,12 +91,78 @@ test("start boots QEMU headless with the kernel on COM1 stdio", () => {
   ]);
   assert.deepEqual(args.slice(args.indexOf("-serial"), args.indexOf("-serial") + 2), ["-serial", "stdio"]);
   assert.equal(args[args.indexOf("-display") + 1], "none");
+  assert.equal(args.includes("-accel"), false);
   assert.equal(bridge.status().state, "running");
+  assert.equal(bridge.status().accel, "tcg");
+});
+
+test("KVM is detected from a usable /dev/kvm, and can be forced either way", () => {
+  const kvm = { exists: () => true, access: () => {} };
+  const unavailable = { exists: () => true, access: () => { throw new Error("EACCES"); } };
+  assert.equal(resolveAccel({ env: {}, platform: "linux", ...kvm }), "kvm");
+  assert.equal(resolveAccel({ env: {}, platform: "linux", ...unavailable }), "tcg");
+  assert.equal(resolveAccel({ env: {}, platform: "darwin", ...kvm }), "tcg");
+  assert.equal(resolveAccel({ env: { POSTCARD_QEMU_ACCEL: "tcg" }, platform: "linux", ...kvm }), "tcg");
+  assert.equal(resolveAccel({ env: { POSTCARD_QEMU_ACCEL: "kvm" }, platform: "linux", ...unavailable }), "kvm");
+
+  const kvmArgs = bridgeArguments({ kernelPath: "/k", accel: "kvm" });
+  assert.deepEqual(kvmArgs.slice(kvmArgs.indexOf("-accel"), kvmArgs.indexOf("-accel") + 2), ["-accel", "kvm"]);
+  assert.equal(bridgeArguments({ kernelPath: "/k", accel: "tcg" }).includes("-accel"), false);
+});
+
+test("a KVM-accelerated bridge passes -accel kvm to QEMU and reports it", () => {
+  const { bridge, spawned } = harness({ accel: "kvm" });
+  bridge.start();
+  assert.deepEqual(spawned[0].args.slice(spawned[0].args.indexOf("-accel"), spawned[0].args.indexOf("-accel") + 2), [
+    "-accel",
+    "kvm",
+  ]);
+  assert.equal(bridge.status().accel, "kvm");
+});
+
+test("the first pull waits for the shell prompt instead of writing into a booting guest", async () => {
+  const { bridge, child } = harness();
+  bridge.start();
+  const pending = bridge.requestSnapshot();
+  assert.deepEqual(child.writes, [], "nothing is written before the prompt");
+  assert.equal(bridge.status().booted, false);
+
+  child.send("G-III: booting IDT, paging, heap...\n");
+  assert.deepEqual(child.writes, [], "boot chatter alone does not open the gate");
+
+  child.send("spatial> ");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(child.writes, ["wmjson\r"]);
+  assert.equal(bridge.status().booted, true);
+
+  child.send(`${FRAME_LINE}\n`);
+  const frame = await pending;
+  assert.equal(frame.revision, 7);
+});
+
+test("a guest that never reaches its prompt fails with kernel_boot_timeout", async () => {
+  const { bridge, child } = harness({ bootTimeoutMs: 40 });
+  bridge.start();
+  await assert.rejects(bridge.requestSnapshot(), (error) => error.code === "kernel_boot_timeout");
+  assert.deepEqual(child.writes, []);
+});
+
+test("a newer pull supersedes one that is still waiting for the prompt", async () => {
+  const { bridge, child } = harness();
+  bridge.start();
+  const first = bridge.requestSnapshot();
+  const second = bridge.requestSnapshot();
+  child.send("spatial> ");
+  await assert.rejects(first, (error) => error.code === "superseded");
+  await new Promise((resolve) => setImmediate(resolve));
+  child.send(`${FRAME_LINE}\n`);
+  const frame = await second;
+  assert.equal(frame.revision, 7);
+  assert.equal(bridge.status().frames, 1);
 });
 
 test("a frame split across reads still parses and resolves the request", async () => {
-  const { bridge, child } = harness();
-  bridge.start();
+  const { bridge, child } = bootedHarness();
   const pending = bridge.requestSnapshot();
   assert.deepEqual(child.writes, ["wmjson\r"]);
 
@@ -104,8 +179,7 @@ test("a frame split across reads still parses and resolves the request", async (
 });
 
 test("console noise is ignored and a malformed frame is counted, not applied", async () => {
-  const { bridge, child } = harness();
-  bridge.start();
+  const { bridge, child } = bootedHarness();
   const pending = bridge.requestSnapshot({ timeout: 60 });
   child.send("spatial> wmjson\r\n");
   child.send("SPATIALv1 {not json}\n");
@@ -115,8 +189,7 @@ test("console noise is ignored and a malformed frame is counted, not applied", a
 });
 
 test("an unanswered request times out with an actionable error", async () => {
-  const { bridge } = harness();
-  bridge.start();
+  const { bridge } = bootedHarness();
   await assert.rejects(bridge.requestSnapshot({ timeout: 30 }), (error) => {
     assert.equal(error.code, "kernel_timeout");
     assert.match(error.message, /wmjson/);
@@ -125,17 +198,16 @@ test("an unanswered request times out with an actionable error", async () => {
 });
 
 test("QEMU exiting rejects the pending request and marks the bridge failed", async () => {
-  const { bridge, child } = harness();
-  bridge.start();
+  const { bridge, child } = bootedHarness();
   const pending = bridge.requestSnapshot({ timeout: 1000 });
   child.emit("exit", 1, null);
   await assert.rejects(pending, (error) => error.code === "qemu_exited");
   assert.equal(bridge.status().state, "failed");
+  assert.equal(bridge.status().booted, false, "a dead guest is not reported as booted");
 });
 
 test("stop ends the serial channel, kills QEMU and settles the request", async () => {
-  const { bridge, child } = harness();
-  bridge.start();
+  const { bridge, child } = bootedHarness();
   const pending = bridge.requestSnapshot({ timeout: 1000 });
   bridge.stop();
   await assert.rejects(pending, (error) => error.code === "bridge_stopped");

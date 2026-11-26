@@ -68,18 +68,18 @@ Architecting a production-grade micro-host operating system with:
 
 ### **Completed Core Subsystems**
 
-#### 1. **Serial Driver** (`src/serial.rs`)
+#### 1. **Serial Driver** (`kernel/src/serial.rs`)
 - UART/16550 serial port driver for COM1 (0x3F8)
 - Thread-safe `Mutex`-protected serial port
 - `serial_println!` macro for kernel debugging output
 
-#### 2. **Global Descriptor Table** (`src/gdt.rs`)
+#### 2. **Global Descriptor Table** (`kernel/src/gdt.rs`)
 - Complete GDT with kernel code segment
 - Task State Segment (TSS) with dedicated interrupt stack
 - 20KB interrupt stack for double fault isolation
 - Proper privilege level segmentation
 
-#### 3. **Interrupt Descriptor Table** (`src/idt.rs`)
+#### 3. **Interrupt Descriptor Table** (`kernel/src/idt.rs`)
 - Full exception handling for all x86_64 CPU exceptions:
   - Divide Error, Breakpoint, Overflow, Bounds Check
   - Invalid Opcode, Device Not Available
@@ -89,13 +89,13 @@ Architecting a production-grade micro-host operating system with:
   - **Page Fault** (ready for paging implementation)
 - Interrupt-safe handler functions with proper stack frames
 
-#### 4. **Memory Management** (`src/memory.rs`)
+#### 4. **Memory Management** (`kernel/src/memory.rs`)
 - `BootInfoFrameAllocator`: Physical frame allocator using bootloader memory map
 - Paging foundation with `OffsetPageTable` and `PageTable` structures
 - Memory region filtering for usable physical frames only
 - Ready for complete virtual memory implementation
 
-#### 5. **Heap Allocator** (`src/heap.rs`)
+#### 5. **Heap Allocator** (`kernel/src/heap.rs`)
 - `BumpAllocator`: Simple early kernel allocator
 - `LockedHeap`: Global heap allocator using `linked_list_allocator`
 - Memory mapping utilities for heap initialization

@@ -1,5 +1,5 @@
 # Post Card Spatial OS · Architecture Roadmap & System Specifications
-**Repository**: `/home/casey/micro-host/micro-host`  
+**Repository**: [`peoplescasey0/G-III`](https://github.com/peoplescasey0/G-III)  
 **Milestone**: M6 (System Architecture, Storage Driver, Golden Images & Monetization)  
 **Status**: ACTIVE REFERENCE SPECIFICATION  
 
@@ -10,7 +10,7 @@
 The Post Card Spatial OS (`micro-host`) is strictly organized into five canonical tiers, ensuring total separation of concerns between bare-metal hardware, isolated userland, hardware virtualization vault, spatial hypervisor, and build automation:
 
 ```
-micro-host/
+G-III/
 ├── kernel/                 # 🟢 Tier 1: The Core Metal (Ring 0 Microkernel)
 │   ├── src/                # Paging, scheduler, IDT, GDT, usermode, PCI, storage, shell
 │   ├── Cargo.toml          # x86_64, spin, uart_16550, linked_list_allocator

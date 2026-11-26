@@ -42,7 +42,7 @@
 | :--- | :--- | :--- | :---: | :---: | :---: | :--- |
 | **Kernel #1A (Base Micro-Host)** | `micro-host/src/` *(upstream)* | [`peoplescasey0/micro-host`](https://github.com/peoplescasey0/micro-host) | **14** | **2,523** | **9** | Minimal freestanding `x86_64` ring-0/ring-3 micro-kernel: GDT/TSS, IDT, 8259 PIC, PS/2 Keyboard, VGA text buffer, 4-level paging, bump heap, round-robin scheduler, TAR ramdisk, and Ring-3 `iretq` user-mode execution. |
 | **Kernel #1B (Extended Micro-Host)** | `micro-host/kernel/src/` *(upstream)* | [`peoplescasey0/micro-host`](https://github.com/peoplescasey0/micro-host) | **17** | **3,447** | **13** | Everything in **#1A** plus hardware PCI bus enumeration (`pci.rs`), capability-based Ring-3 security sandboxing (`sandbox.rs`), and VirtIO-blk block storage + MBR/GPT partitioning + print spooling (`storage.rs`). |
-| **Kernel #2 (`G-III` Top-End AI-Native & Patent-Suite Kernel)** | `kernel/src/` & `src/` | [`peoplescasey0/G-III`](https://github.com/peoplescasey0/G-III) *(Top-End Evolution)* | **22** | **8,079** | **25** | **100% strict superset of Kernel #1B** (`+4,632 LOC`) adding VESA `1024x768x32bpp` graphical framebuffer, Ring-0 3D Spatial Window Manager, Asymmetric Co-Processor offload, Zero-Copy Execution Pipeline, CXL 3.0 pooled memory fabric, and **6 Patent-Backed Hardware/Enterprise Subsystems** (Out-of-Band IME Neural Co-Processor, 9-DoF/LiDAR/Event Spatial Perception, Agentic Self-Healing, IBM MIaaS Live VM Disk Swap, Pocket Modular Computer Brain, Applied Materials Semiconductor Fab R2R Control, Risk-Based Augmented Secrets Graph, and Telecom DPLL + DDS + EW-RLS Clock/Time Synchronization). |
+| **Kernel #2 (`G-III` Top-End AI-Native & Patent-Suite Kernel)** | `kernel/src/` | [`peoplescasey0/G-III`](https://github.com/peoplescasey0/G-III) *(Top-End Evolution)* | **22** | **8,079** | **25** | **100% strict superset of Kernel #1B** (`+4,632 LOC`) adding VESA `1024x768x32bpp` graphical framebuffer, Ring-0 3D Spatial Window Manager, Asymmetric Co-Processor offload, Zero-Copy Execution Pipeline, CXL 3.0 pooled memory fabric, and **6 Patent-Backed Hardware/Enterprise Subsystems** (Out-of-Band IME Neural Co-Processor, 9-DoF/LiDAR/Event Spatial Perception, Agentic Self-Healing, IBM MIaaS Live VM Disk Swap, Pocket Modular Computer Brain, Applied Materials Semiconductor Fab R2R Control, Risk-Based Augmented Secrets Graph, and Telecom DPLL + DDS + EW-RLS Clock/Time Synchronization). |
 | **3D Spatial Studio Host** | `workspace-prototype/` | [`peoplescasey0/Post-Card-Spatial-O.S`](https://github.com/peoplescasey0/Post-Card-Spatial-O.S) | **Three.js + Vite + QMP/noVNC** | **~5,400 TS/MJS** | **57 Automated Tests** | Interactive 3D WebGL card carousel that boots **Kernel #2 (`G-III`)** live inside the **Post Card · Spatial OS** 3D card via QEMU noVNC WebSocket (`127.0.0.1:5700`), QMP (`127.0.0.1:4444`), and bidirectional COM1 Serial Bridge (`127.0.0.1:4544`). |
 
 ---
@@ -59,7 +59,7 @@ flowchart TB
         K1A --> K1B
     end
 
-    subgraph K2["Kernel #2: G-III Top-End Kernel (kernel/src/ & src/ — 22 Modules, 8,079 LOC)"]
+    subgraph K2["Kernel #2: G-III Top-End Kernel (kernel/src/ — 22 Modules, 8,079 LOC)"]
         G_GFX["Graphical & Spatial Engine<br/>+ framebuffer.rs (VESA 1024x768x32bpp Linear FB)<br/>+ spatial_wm.rs (Ring-0 3D Spatial Desktop Compositor)"]
         G_COPROC["Heterogeneous Compute & Pipeline<br/>+ coprocessor.rs (Asymmetric Co-Processor + SPSC Rings)<br/>+ pipeline.rs (Zero-Copy Pipeline + SYS_BATCH Syscalls)<br/>+ CXL 3.0 Type-3 Memory Pool & Live Frame Migration"]
         G_PATENTS["6 Integrated Patent Subsystems<br/>+ hal_ime.rs (Out-of-Band IME Neural Co-Processor, 9-DoF Spatial,<br/>Agentic Self-Healing, Telecom DPLL+DDS+EW-RLS Clock Sync)<br/>+ storage.rs (IBM CN103853595B Live Disk Swap + CN108628404A Pocket Brain)<br/>+ sandbox.rs (Applied Materials TWI867989B Fab R2R + Augmented Secrets Graph)"]
@@ -75,7 +75,7 @@ flowchart TB
 
 ### Module-by-Module Breakdown
 
-| Module | `micro-host/src` (#1A) | `micro-host/kernel/src` (#1B) | `G-III` (`kernel/src` & `src` #2) | Key Differences & Capabilities Added in `G-III` (#2) |
+| Module | `micro-host/src` (#1A) | `micro-host/kernel/src` (#1B) | `G-III` (`kernel/src` #2) | Key Differences & Capabilities Added in `G-III` (#2) |
 | :--- | :---: | :---: | :---: | :--- |
 | `gdt.rs` | 81 LOC | 81 LOC | 81 LOC | Identical: Ring-0/Ring-3 code & data descriptors + TSS + Double-Fault IST stack. |
 | `heap.rs` | 50 LOC | 50 LOC | 50 LOC | Identical: IRQ-safe `BumpAllocator` backing `alloc` (`Vec`, `String`, `Box`). |
@@ -130,12 +130,11 @@ flowchart TB
 
 ---
 
-## 4. Repository Layout in `/home/damion/Desktop/next2` (Prepared for `G-III`)
+## 4. Repository Layout (Prepared for `G-III`)
 
 ```text
-/home/damion/Desktop/next2/
+G-III/
 ├── kernel/src/                  # Kernel #2 (G-III Top-End Kernel - 22 modules, 8,079 LOC)
-├── src/                         # Synchronized root build of Kernel #2 (G-III Top-End Kernel)
 # Kernel #1 (micro-host) is not vendored here; it lives in its own repository at
 # github.com/peoplescasey0/micro-host (14-module 1A and 17-module 1B baselines).
 ├── workspace-prototype/         # Three.js + Vite + noVNC 3D Spatial Studio (from Post-Card-Spatial-O.S)

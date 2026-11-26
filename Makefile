@@ -16,7 +16,7 @@ ISO_FILE := target/postcard-spatial-os.iso
 RAW_DISK := target/postcard-os.raw
 RAMDISK_IMG := ramdisk.img
 
-.PHONY: all check userland ramdisk secure kernel iso disk qemu-boot qemu-shell test test-e2e test-spatial clean help frontend stripe-probe stripe-sync
+.PHONY: all check userland ramdisk secure kernel iso disk stage-vm qemu-boot qemu-shell test test-e2e test-spatial clean help frontend stripe-probe stripe-sync
 
 all: userland ramdisk secure kernel iso
 
@@ -50,6 +50,10 @@ iso: kernel
 disk: kernel
 	@echo "=== Installing Post Card OS to raw disk image ==="
 	./scripts/install_postcard_os_wsl.sh $(RAW_DISK) $(KERNEL_BIN)
+
+stage-vm:
+	@echo "=== Staging kernel artifacts into the guest data directory ==="
+	./scripts/stage_vm_images.sh
 
 frontend:
 	@echo "=== Building workspace-prototype frontend ==="
@@ -111,6 +115,7 @@ help:
 	@echo "  make kernel       - Compile release bare-metal kernel ELF via scripts/build_kernel.sh"
 	@echo "  make iso          - Create bootable Multiboot2 ISO via scripts/create_iso.sh"
 	@echo "  make disk         - Prepare raw virtual disk (target/postcard-os.raw)"
+	@echo "  make stage-vm     - Copy kernel/ramdisk into workspace-prototype/data/master-images"
 	@echo "  make frontend     - Build workspace-prototype frontend (Vite & TypeScript)"
 	@echo "  make stripe-probe - Probe Stripe API key capabilities and catalog status"
 	@echo "  make stripe-sync  - Idempotently sync Stripe products/prices and update .env"

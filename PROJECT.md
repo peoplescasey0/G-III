@@ -4,7 +4,7 @@
 Micro-Host is a hybrid bare-metal operating system and spatial hypervisor project structured strictly into five modular tiers:
 
 ```
-micro-host/
+G-III/
 ├── kernel/                 # 🟢 The Core Metal (Ring 0)
 │   ├── src/                # Paging, scheduler, IDT, GDT, usermode dispatcher, shell, memory, heap, pic
 │   ├── Cargo.toml          # Kernel dependencies (x86_64, spin, uart_16550, linked_list_allocator)

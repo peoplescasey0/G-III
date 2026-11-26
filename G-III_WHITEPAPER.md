@@ -3,7 +3,7 @@
 **Technical White Paper — Version 3.0 (`G-III` Unified Edition)**  
 **Repository**: [`https://github.com/peoplescasey0/G-III`](https://github.com/peoplescasey0/G-III)  
 **Target Architecture**: `x86_64-unknown-none` (`#![no_std]`, `#![no_main]`, Ring-0 / Ring-3 Hardware Isolation)  
-**Compiled Footprint**: **`407 KB`** Kernel ELF ([postcard-minimal-kernel](file:///home/damion/Desktop/next2/workspace-prototype/data/master-images/postcard-minimal-kernel)) + **`40 KB`** USTAR Ramdisk ([ramdisk.img](file:///home/damion/Desktop/next2/ramdisk.img))
+**Compiled Footprint**: **`407 KB`** Kernel ELF ([postcard-minimal-kernel](workspace-prototype/data/master-images/postcard-minimal-kernel)) + **`40 KB`** USTAR Ramdisk ([ramdisk.img](ramdisk.img))
 
 ---
 
@@ -12,12 +12,12 @@
 Modern enterprise computing is dominated by what we term **"The Hare"**: multi-gigabyte software monoliths burdened by puluhan-thousand-line configuration boilerplate, deep virtualization tax, unbounded garbage-collection pauses, and mandatory cloud-landlord telemetry tolls. While visually impressive at launch, these architectures suffer catastrophic latency degradation and operational fragility under real-world load.
 
 This white paper presents **Post Card Spatial OS (`G-III`, codenamed "The Tortoise")**—a freestanding, `#![no_std]` bare-metal `x86_64` micro-kernel written entirely in Rust that compresses **22 kernel subsystems (`8,204 LOC`)** into a **`407 KB` executable binary**. `G-III` unifies:
-1. **Zero-Copy Direct-Flight Execution Pipelines** (`cpu_copies = 0`, `ring_handoffs = 4`) and an **Ontological Service Discovery Function (SDF)** ([pipeline.rs](file:///home/damion/Desktop/next2/kernel/src/pipeline.rs));
-2. **CXL 3.0 Disaggregated Memory Pooling** with hardware-enforced page-table boundaries and zero-copy cross-host frame migration ([paging.rs](file:///home/damion/Desktop/next2/kernel/src/paging.rs));
-3. **Out-of-Band Intelligent Management Engine (IME) Neural Supervision**, **9-DoF / Neuromorphic DVS / ToF Spatial Perception**, and **Agentic Self-Healing** ([hal_ime.rs](file:///home/damion/Desktop/next2/kernel/src/hal_ime.rs));
+1. **Zero-Copy Direct-Flight Execution Pipelines** (`cpu_copies = 0`, `ring_handoffs = 4`) and an **Ontological Service Discovery Function (SDF)** ([pipeline.rs](kernel/src/pipeline.rs));
+2. **CXL 3.0 Disaggregated Memory Pooling** with hardware-enforced page-table boundaries and zero-copy cross-host frame migration ([paging.rs](kernel/src/paging.rs));
+3. **Out-of-Band Intelligent Management Engine (IME) Neural Supervision**, **9-DoF / Neuromorphic DVS / ToF Spatial Perception**, and **Agentic Self-Healing** ([hal_ime.rs](kernel/src/hal_ime.rs));
 4. **Six Patent-Backed Enterprise & Hardware Subsystems**, including **Telecom DPLL + Direct Digital Synthesis (DDS) + Exponentially Weighted Recursive Least Squares (EW-RLS)** nanosecond clock recovery, **Risk-Based Augmented Secrets with Transitive Dependency Graphs**, **Applied Materials (`TWI867989B`) Adaptive DoE Silicon Control**, **IBM (`CN103853595B`) Live VM Disk Replacement**, and a **Credit-Card Modular Pocket Brain (`CN108628404A`)**;
-5. **A Ring-0 VESA `1024×768×32bpp` 3D Spatial Compositor** ([framebuffer.rs](file:///home/damion/Desktop/next2/kernel/src/framebuffer.rs), [spatial_wm.rs](file:///home/damion/Desktop/next2/kernel/src/spatial_wm.rs)) bridged live into a **Three.js WebGL 3D Spatial Studio** ([workspace-prototype/](file:///home/damion/Desktop/next2/workspace-prototype)); and
-6. **A Cyber-Physical Workshop Umbilical** that routes Ring-0 `COM1 (0x3F8)` UART frames directly over physical USB-to-UART copper wires to **ESP32 / Arduino sidekicks** ([tortoise_sidekick.ino](file:///home/damion/Desktop/next2/integrations/workshop-esp32/tortoise_sidekick.ino)) to control dual-motor e-bike/scooter split-throttle powertrains in real time.
+5. **A Ring-0 VESA `1024×768×32bpp` 3D Spatial Compositor** ([framebuffer.rs](kernel/src/framebuffer.rs), [spatial_wm.rs](kernel/src/spatial_wm.rs)) bridged live into a **Three.js WebGL 3D Spatial Studio** ([workspace-prototype/](workspace-prototype)); and
+6. **A Cyber-Physical Workshop Umbilical** that routes Ring-0 `COM1 (0x3F8)` UART frames directly over physical USB-to-UART copper wires to **ESP32 / Arduino sidekicks** ([tortoise_sidekick.ino](integrations/workshop-esp32/tortoise_sidekick.ino)) to control dual-motor e-bike/scooter split-throttle powertrains in real time.
 
 ---
 
@@ -46,7 +46,7 @@ The `G-III` repository evolves the lineage from the minimal `micro-host` kernel 
 1. **Generation 1 (`micro-host` Baseline — upstream [`peoplescasey0/micro-host`](https://github.com/peoplescasey0/micro-host))**:
    - **Tier 1A (`micro-host/src/` — 14 modules, `2,523 LOC`)**: Freestanding x86_64 boot, GDT/TSS with Double-Fault IST stack, IDT exception/IRQ vectors, 8259 PIC, PS/2 keyboard driver, VGA text console, 4-level page tables, bump heap, preemptive/cooperative round-robin scheduler, USTAR ramdisk, and Ring-3 `iretq` user-mode execution.
    - **Tier 1B (`micro-host/kernel/src/` — 17 modules, `3,447 LOC`)**: Adds bare-metal PCI bus enumeration (`0xCF8`/`0xCFC`), IOMMU VFIO passthrough guards, OpenSandbox workload identity & loopback enforcement, and MBR storage partitioning with async I/O spooling.
-2. **Generation 2 (`G-III` Top-End Kernel — [kernel/src/](file:///home/damion/Desktop/next2/kernel/src) & [src/](file:///home/damion/Desktop/next2/src) — 22 modules, `8,204 LOC`)**:
+2. **Generation 2 (`G-III` Top-End Kernel — [kernel/src/](kernel/src) — 22 modules, `8,204 LOC`)**:
    - A strict superset (`+4,757 LOC`) adding the Zero-Copy Nervous System, CXL 3.0 memory pooling, VESA 3D Spatial Compositor, Out-of-Band IME Neural Co-Processor, 6 patent subsystems, and the Workshop Iron controller.
 
 ```mermaid
@@ -76,7 +76,7 @@ flowchart TB
 
 ## 3. The Nervous System: Zero-Copy Pipelines, Direct Hardware & P2P Mesh (`wire`)
 
-Traditional operating systems copy network and IPC payloads across multiple kernel skbuffs, socket buffers, and user-space serialization heaps. `G-III` replaces this entire stack with a three-layer nervous system ([kernel/src/pipeline.rs](file:///home/damion/Desktop/next2/kernel/src/pipeline.rs), [kernel/src/coprocessor.rs](file:///home/damion/Desktop/next2/kernel/src/coprocessor.rs), [kernel/src/hal_ime.rs](file:///home/damion/Desktop/next2/kernel/src/hal_ime.rs)) invocable via the `wire` command:
+Traditional operating systems copy network and IPC payloads across multiple kernel skbuffs, socket buffers, and user-space serialization heaps. `G-III` replaces this entire stack with a three-layer nervous system ([kernel/src/pipeline.rs](kernel/src/pipeline.rs), [kernel/src/coprocessor.rs](kernel/src/coprocessor.rs), [kernel/src/hal_ime.rs](kernel/src/hal_ime.rs)) invocable via the `wire` command:
 
 1. **Zero-Copy Direct-Flight Chaining (`cpu_copies = 0`)**:
    - Payloads are allocated once in a page-aligned physical arena (`alloc_zero_copy_bytes`).
@@ -84,7 +84,7 @@ Traditional operating systems copy network and IPC payloads across multiple kern
      $$\text{Slot}_{\text{phys}} \xrightarrow{\text{Ring } 0} \text{Decrypt} \xrightarrow{\text{Ring } 1} \text{DeepPacketInspection} \xrightarrow{\text{Ring } 2} \text{Analytics} \xrightarrow{\text{Ring } 3} \text{IntegrityHash}$$
    - All 4 accelerator stages operate in-place on `phys_addr`, guaranteeing **`ring_handoffs = 4`** and **`cpu_staging_copies = 0`**.
 2. **Direct Hardware Handshakes**:
-   - The kernel enumerates PCI devices and IOMMU groups directly via `0xCF8`/`0xCFC` ([pci.rs](file:///home/damion/Desktop/next2/kernel/src/pci.rs)), manages CXL 3.0 pooled frames ([paging.rs](file:///home/damion/Desktop/next2/kernel/src/paging.rs)), and polls `I2C` (`400 kHz`), `SPI` (`20 MHz`), `MIPI CSI-2` (`4-lane`), and `SMBus-PMIC` rails directly in Ring-0.
+   - The kernel enumerates PCI devices and IOMMU groups directly via `0xCF8`/`0xCFC` ([pci.rs](kernel/src/pci.rs)), manages CXL 3.0 pooled frames ([paging.rs](kernel/src/paging.rs)), and polls `I2C` (`400 kHz`), `SPI` (`20 MHz`), `MIPI CSI-2` (`4-lane`), and `SMBus-PMIC` rails directly in Ring-0.
 3. **Decentralized Mesh & Presence (`cloud_telemetry_bytes = 0`)**:
    - Peer nodes (`WearableHeadset`, `MobileWorkstation`, `EdgeAppliance`) exchange zero-copy spatial point clouds peer-to-peer over loopback/local links while locked to a shared nanosecond physical timeline via DPLL+DDS+EW-RLS clock recovery.
 
@@ -92,7 +92,7 @@ Traditional operating systems copy network and IPC payloads across multiple kern
 
 ## 4. Mathematical Formulations of the Integrated Patent Suite
 
-### 4.1 Telecom Packet-Network Time & Frequency Synchronization: DPLL + DDS + EW-RLS ([hal_ime.rs](file:///home/damion/Desktop/next2/kernel/src/hal_ime.rs#L636-L788))
+### 4.1 Telecom Packet-Network Time & Frequency Synchronization: DPLL + DDS + EW-RLS ([hal_ime.rs](kernel/src/hal_ime.rs#L636-L788))
 
 Packet networks introduce stochastic Packet Delay Variation (PDV) and packet loss that corrupt traditional PLLs. `G-III` implements a dual-signal **Digital Phase-Locked Loop (DPLL)** driven by **Direct Digital Synthesis (DDS)** and an **Exponentially Weighted Recursive Least Squares (EW-RLS)** state estimator operating strictly in 64-bit integer arithmetic (`# ! [no_std]`, zero floating-point instructions).
 
@@ -111,7 +111,7 @@ $$M_k = M_0 - \left\lfloor \frac{M_0 \cdot \hat{\gamma}_k}{10^9} \right\rfloor -
 
 ---
 
-### 4.2 Risk-Based Augmented Secrets & Transitive Dependency Graph ([sandbox.rs](file:///home/damion/Desktop/next2/kernel/src/sandbox.rs#L180-L310))
+### 4.2 Risk-Based Augmented Secrets & Transitive Dependency Graph ([sandbox.rs](kernel/src/sandbox.rs#L180-L310))
 
 Unlike ordinary digital assets (which hold intrinsic value), a secret's risk derives entirely from the assets it guards and the downstream secrets it unlocks (**Risk Transitivity**). For an augmented secret $s_i$ that unlocks a set of child secrets $\mathcal{U}(s_i)$ and guards assets of sensitivity $A(s_i)$, `G-III` computes the composite transitive risk score $R(s_i) \in [0, 1000]$ under environmental context multiplier $C_{\text{ctx}}$:
 
@@ -129,9 +129,9 @@ Based on $R_{\text{total}}(s_i)$, the kernel dynamically modulates access across
 
 ### 4.3 Semiconductor Adaptive DoE (`TWI867989B`), Live VM Disk Swap (`CN103853595B`) & Modular Pocket Brain (`CN108628404A`)
 
-- **Adaptive Design-of-Experiments (`TWI867989B` — [sandbox.rs](file:///home/damion/Desktop/next2/kernel/src/sandbox.rs#L312-L402))**: Evaluates a 5-point full-factorial DoE matrix over voltage trim $\Delta V \in [-25, +15]\text{ mV}$ and clock phase $\Delta \phi \in [-10, +15]\text{ ps}$ to minimize silicon process variability from `420 ppm` down to **`103 ppm`** (`doe` command).
-- **Live Virtual Machine Disk Replacement (`CN103853595B` — [storage.rs](file:///home/damion/Desktop/next2/kernel/src/storage.rs))**: Atomically merges source and target MIaaS disk descriptors while preserving `vm_uuid` (`0x504F_5354_4341_5244`) across storage volume hot-swap (`vmdisk` command).
-- **Credit-Card Pocket Computer Brain (`CN108628404A` — [storage.rs](file:///home/damion/Desktop/next2/kernel/src/storage.rs))**: Models an `85.6 mm × 53.98 mm` pocket computing core whose NVMe storage remains hardware-encrypted until mutually authenticated with an inert display/keyboard shell (`dock` command).
+- **Adaptive Design-of-Experiments (`TWI867989B` — [sandbox.rs](kernel/src/sandbox.rs#L312-L402))**: Evaluates a 5-point full-factorial DoE matrix over voltage trim $\Delta V \in [-25, +15]\text{ mV}$ and clock phase $\Delta \phi \in [-10, +15]\text{ ps}$ to minimize silicon process variability from `420 ppm` down to **`103 ppm`** (`doe` command).
+- **Live Virtual Machine Disk Replacement (`CN103853595B` — [storage.rs](kernel/src/storage.rs))**: Atomically merges source and target MIaaS disk descriptors while preserving `vm_uuid` (`0x504F_5354_4341_5244`) across storage volume hot-swap (`vmdisk` command).
+- **Credit-Card Pocket Computer Brain (`CN108628404A` — [storage.rs](kernel/src/storage.rs))**: Models an `85.6 mm × 53.98 mm` pocket computing core whose NVMe storage remains hardware-encrypted until mutually authenticated with an inert display/keyboard shell (`dock` command).
 
 ---
 
@@ -155,7 +155,7 @@ sequenceDiagram
     ESP->>IRON: Closes Main Contactor Relay (GPIO 26)<br/>Drives Front PWM (79%) & Rear PWM (95%)
 ```
 
-### Incline-Compensated Split-Throttle Torque Vectoring ([hal_ime.rs](file:///home/damion/Desktop/next2/kernel/src/hal_ime.rs#L790-L875))
+### Incline-Compensated Split-Throttle Torque Vectoring ([hal_ime.rs](kernel/src/hal_ime.rs#L790-L875))
 When climbing a steep grade ($\theta_{\text{pitch}} > 8^\circ$), normal weight transfer unloads the front wheel of a dual-motor e-bike or scooter, causing front tire spin under heavy split-throttle input. `step_workshop_dual_motor_telemetry` computes a deterministic front-wheel PWM trim $\Delta D_{\text{front}}$ in Ring-0:
 
 $$\Delta D_{\text{front}} = \min\Big(25,\; \max(0,\; \theta_{\text{pitch}} - 8^\circ)\Big), \qquad D_{\text{front}} = \max(0,\; T_{\text{front}} - \Delta D_{\text{front}})$$
@@ -172,9 +172,9 @@ At $\theta_{\text{pitch}} = 14^\circ$ with $T_{\text{front}} = 85\%$ and $T_{\te
 
 Every subsystem described in this white paper is verified by automated tests executing against the compiled bare-metal kernel in QEMU and the Three.js Spatial Studio:
 
-1. **11-Stage Bare-Metal Boot Self-Test ([scripts/boot_test.sh](file:///home/damion/Desktop/next2/scripts/boot_test.sh))**:
+1. **11-Stage Bare-Metal Boot Self-Test ([scripts/boot_test.sh](scripts/boot_test.sh))**:
    - Verifies Multiboot2 entry, 4-level paging, heap allocation, CXL 3.0 boundary migration, zero-copy 4-handoff pipeline (`cpu_copies = 0`), tiered storage & non-WORM snapshots, 9-DoF/ToF/QRNG/Mesh/Self-Healing, VESA `0x00FF0000` framebuffer plot & 3D spatial window manager, and all 5 patent self-tests (`100% PASS`).
-2. **30-Command Interactive Serial Shell Suite ([scripts/shell_test.sh](file:///home/damion/Desktop/next2/scripts/shell_test.sh))**:
+2. **30-Command Interactive Serial Shell Suite ([scripts/shell_test.sh](scripts/shell_test.sh))**:
    - Exercises all 30 interactive `spatial>` commands (`help`, `echo`, `uptime`, `mem`, `ps`, `pci`, `disks`, `sdf`, `pipeline`, `tier`, `snap`, `pool`, `hal`, `sensors`, `qrng`, `mesh`, `fb`, `compose`, `wm`, `copilot`, `secrets`, `vmdisk`, `dock`, `doe`, `dpll`, `tortoise`, `wire`, `workshop`, `ime`, `sandbox`) over live QEMU serial (`30/30 PASS`).
-3. **57-Test Three.js 3D Spatial Studio Suite ([workspace-prototype/tests/workspace.test.mjs](file:///home/damion/Desktop/next2/workspace-prototype/tests/workspace.test.mjs))**:
+3. **57-Test Three.js 3D Spatial Studio Suite ([workspace-prototype/tests/workspace.test.mjs](workspace-prototype/tests/workspace.test.mjs))**:
    - Verifies the WebGL 3D card carousel, `postcard-os` live QEMU kernel boot (`127.0.0.1:5700` VNC WebSocket, `127.0.0.1:4444` QMP, `127.0.0.1:4544` COM1 Serial Bridge), and loopback security invariants (`57/57 PASS`).
